@@ -43,7 +43,7 @@ function Login() {
 
             try {
 
-              const res = await fetch("https://https://voice-backend-bqji.onrender.com/api/login/", {
+              const res = await fetch("https://voice-backend-bqji.onrender.com/api/login/", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
