@@ -149,6 +149,10 @@ class VoiceCampaign(models.Model):
         default="Untitled Campaign"
     )
 
+    busy = models.IntegerField(default=0)
+
+    no_answer = models.IntegerField(default=0)
+
     # Selected Audio
     media_file = models.ForeignKey(
         VoiceMediaFile,

@@ -24,76 +24,127 @@ PLIVO_AUTH_ID    = "MAMWNINZA2NGETMWNLYY"
 PLIVO_AUTH_TOKEN = "NWI3OTQ5MGEtMmU2Yy00ZDk2LTUzNmEtZmUxNjFl"
 PLIVO_NUMBER     = "918035017649"
 
-# Tumhara ngrok URL (no trailing slash)
 SERVER_URL = "https://voicecall-8m4p.onrender.com"
-# Plivo client
+
 plivo_client = plivo.RestClient(PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN)
 
 
 # =====================================
 # CLEAN NUMBER
-# Indian 10-digit → 91XXXXXXXXXX (Plivo format)
 # =====================================
 
 def clean_number(number):
-
     num    = str(number).strip()
     digits = ''.join(filter(str.isdigit, num))
 
     if not digits:
         return None
 
-    # Remove country code if present
     if digits.startswith("91") and len(digits) == 12:
         digits = digits[2:]
 
     if len(digits) != 10:
         return None
 
-    return "91" + digits    # Plivo format: 91XXXXXXXXXX (no + sign)
+    return "91" + digits
 
 
 # =====================================
-# PLIVO CALLBACK — XML (what to play)
-# Plivo hits this URL when call connects
+# NORMALIZE NUMBER
+# =====================================
+
+def normalize_number(number):
+    digits = ''.join(filter(str.isdigit, str(number)))
+    if len(digits) >= 10:
+        return digits[-10:]
+    return digits
+
+
+# =====================================
+# CLASSIFY STATUS — SINGLE SOURCE OF TRUTH
+# Plivo ke saare possible values cover kiye hain
+# =====================================
+
+def classify_status(raw_status):
+    """
+    Plivo se aane wale har status ko standard bucket mein daalte hain.
+    Returns: 'answered' | 'busy' | 'no_answer' | 'failed' | 'pending'
+
+    Plivo ke known CallStatus values:
+      - answer       → answered
+      - completed    → answered  (call connect hua aur khatam hua)
+      - busy         → busy
+      - no-answer    → no_answer
+      - failed       → failed
+      - rejected     → no_answer
+      - cancelled    → no_answer
+      - timeout      → no_answer
+
+    Plivo ke known HangupCause values:
+      - NORMAL_CLEARING      → answered
+      - USER_BUSY            → busy
+      - NO_ANSWER            → no_answer
+      - NO_USER_RESPONSE     → no_answer
+      - SUBSCRIBER_ABSENT    → no_answer
+      - CALL_REJECTED        → no_answer
+      - UNALLOCATED_NUMBER   → failed
+      - NORMAL_UNSPECIFIED   → failed
+    """
+    s = str(raw_status or "").strip().lower()
+
+    # ---- ANSWERED ----
+    if s in ["completed", "answered", "answer", "normal_clearing"]:
+        return "answered"
+
+    # ---- BUSY ----
+    if s in ["busy", "user_busy"]:
+        return "busy"
+
+    # ---- NO ANSWER ----
+    if s in [
+        "no-answer", "no_answer", "noanswer", "no answer",
+        "rejected", "cancelled", "canceled",
+        "timeout", "no_user_response",
+        "subscriber_absent", "call_rejected",
+    ]:
+        return "no_answer"
+
+    # ---- FAILED ----
+    if s in ["failed", "unallocated_number", "normal_unspecified", "error"]:
+        return "failed"
+
+    # ---- PENDING / UNKNOWN ----
+    return "pending"
+
+
+# =====================================
+# PLIVO XML CALLBACK
 # =====================================
 
 @csrf_exempt
 def twilio_callback(request):
-
     media_url   = request.GET.get("file", "")
     campaign_id = request.GET.get("campaign_id", "")
 
-    print(
-        f"=== PLIVO CALLBACK === "
-        f"campaign={campaign_id} "
-        f"file={media_url}"
-    )
+    print(f"=== PLIVO XML CALLBACK === campaign={campaign_id} file={media_url}")
 
     if media_url:
-
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{media_url}</Play>
 </Response>"""
-
     else:
-
         xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Speak>Hello, this is a voice campaign message.</Speak>
 </Response>"""
 
-    return HttpResponse(
-        xml,
-        content_type="application/xml"
-    )
+    return HttpResponse(xml, content_type="application/xml")
+
 
 # =====================================
-# PLIVO STATUS CALLBACK
-# Plivo hits this after call ends
+# CREATE ADMIN
 # =====================================
-
 
 @api_view(['GET'])
 def create_admin(request):
@@ -106,171 +157,177 @@ def create_admin(request):
             "credit": 999999
         }
     )
+    return Response({"status": "success", "created": created})
 
-    return Response({
-        "status": "success",
-        "created": created
-    })
+
+# =====================================
+# PLIVO STATUS CALLBACK
+# =====================================
 
 @csrf_exempt
 def twilio_status(request):
 
     campaign_id = request.GET.get("campaign_id", "")
-    call_uuid   = request.POST.get("CallUUID", "")
-    call_status = request.POST.get("CallStatus", "")
-    print("CALL STATUS =", call_status)
 
-    print("POST DATA =", dict(request.POST))
+    # ------------------------------------------------------------------
+    # Plivo dono field bhej sakta hai: CallStatus ya HangupCause
+    # Dono ko try karo — jo bhi informative mile woh use karo
+    # ------------------------------------------------------------------
+    call_status_raw  = request.POST.get("CallStatus",  "").strip()
+    hangup_cause_raw = request.POST.get("HangupCause", "").strip()
+    call_duration    = request.POST.get("Duration",    "0").strip()
 
-    number   = request.POST.get("To", "")
-    duration = request.POST.get("Duration", "0")
+    # HangupCause zyada accurate hoti hai (NORMAL_CLEARING, USER_BUSY, etc.)
+    # Agar dono available hain, toh classify karke decide karo
+    bucket_from_status = classify_status(call_status_raw)
+    bucket_from_cause  = classify_status(hangup_cause_raw)
 
-    print(
-        f"=== PLIVO STATUS === "
-        f"campaign={campaign_id} "
-        f"uuid={call_uuid} "
-        f"status={call_status} "
-        f"number={number} "
-        f"duration={duration}s"
-    )
+    # Priority: agar HangupCause se kuch specific mila (not pending) toh wahi use karo
+    # Otherwise CallStatus use karo
+    if bucket_from_cause != "pending":
+        final_bucket    = bucket_from_cause
+        status_to_store = hangup_cause_raw.lower() if hangup_cause_raw else call_status_raw.lower()
+    else:
+        final_bucket    = bucket_from_status
+        status_to_store = call_status_raw.lower()
 
-    if campaign_id:
+    # Plivo To field
+    raw_to    = request.POST.get("To", "")
+    to_last10 = normalize_number(raw_to)
 
-        try:
+    print("=" * 60)
+    print(f"PLIVO STATUS CALLBACK")
+    print(f"  campaign_id    : {campaign_id}")
+    print(f"  CallStatus     : {call_status_raw}")
+    print(f"  HangupCause    : {hangup_cause_raw}")
+    print(f"  Final bucket   : {final_bucket}")
+    print(f"  Status stored  : {status_to_store}")
+    print(f"  To (raw)       : {raw_to}")
+    print(f"  To (last10)    : {to_last10}")
+    print(f"  Duration       : {call_duration}s")
+    print(f"  ALL POST       : {dict(request.POST)}")
+    print("=" * 60)
 
-            campaign = VoiceCampaign.objects.get(
-                id=campaign_id
-            )
+    if not campaign_id:
+        return HttpResponse("OK")
 
-            results = campaign.results or []
+    try:
+        campaign = VoiceCampaign.objects.get(id=campaign_id)
+        results  = campaign.results or []
 
-            # ==========================
-            # UPDATE RESULT
-            # ==========================
-            for r in results:
+        # ------------------------------------------------------------------
+        # FIND & UPDATE THE RESULT
+        # ------------------------------------------------------------------
+        matched = False
 
-                if r.get("number") == number:
+        # Pass 1: number se match karo
+        for r in results:
+            r_last10 = normalize_number(r.get("number", ""))
+            if r_last10 == to_last10 and len(to_last10) >= 10:
+                r["final_status"] = status_to_store
+                r["status"]       = status_to_store
+                r["duration"]     = call_duration
+                matched           = True
+                print(f"  MATCHED by number → {r.get('number')} → {status_to_store} ({final_bucket})")
+                break
 
-                    r["final_status"] = call_status
-                    r["status"] = call_status   
-                    r["duration"] = duration
-
-                    break
-
-            # ==========================
-            # RECALCULATE COUNTS
-            # ==========================
-            answered = 0
-            failed = 0
-
-            for item in results:
-
-                status = str(
-                    item.get(
-                        "final_status",
-                        ""
-                    )
-                ).lower()
-
-                if status in [
-    "completed",
-    "answered"
-                ]:
-                 answered += 1
-
-                elif status in [
-    "busy",
-    "failed",
-    "no-answer",
-    "rejected",
-    "canceled"
-                ]:
-                 failed += 1
-
-            campaign.success = answered
-            campaign.failed = failed
-            campaign.results = results
-
-            campaign.save()
-
-            # ==========================
-            # RETRY LOGIC
-            # ==========================
-            status_lower = call_status.lower()
-
-            if status_lower in [
-                "busy",
-                "failed",
-                "no-answer"
-            ]:
-
+        # Pass 2: CallUUID se match karo
+        if not matched:
+            call_uuid = request.POST.get("CallUUID", "")
+            if call_uuid:
                 for r in results:
-
-                    if r.get("number") == number:
-
-                        retry_count = r.get(
-                            "retry_count",
-                            0
-                        )
-
-                        if (
-                            hasattr(campaign, "retry_attempt")
-                            and
-                            retry_count < campaign.retry_attempt
-                        ):
-
-                            r["retry_count"] = (
-                                retry_count + 1
-                            )
-
-                            from threading import Timer
-
-                            delay_seconds = (
-                                campaign.retry_duration * 60
-                            )
-
-                            Timer(
-                                delay_seconds,
-
-                                lambda: make_twilio_call(
-                                    number=number,
-                                    media_url=campaign.voice_file_id,
-                                    campaign_id=campaign.id
-                                )
-
-                            ).start()
-
-                            print(
-                                f"RETRY SCHEDULED "
-                                f"{retry_count + 1}/"
-                                f"{campaign.retry_attempt}"
-                            )
-
+                    if r.get("job_id", "") == call_uuid:
+                        r["final_status"] = status_to_store
+                        r["status"]       = status_to_store
+                        r["duration"]     = call_duration
+                        matched           = True
+                        print(f"  MATCHED by UUID → {r.get('number')} → {status_to_store} ({final_bucket})")
                         break
 
-                campaign.results = results
-                campaign.save()
+        if not matched:
+            print(f"  WARNING: No match — To={raw_to} last10={to_last10}")
+            print(f"  Numbers in results: {[r.get('number') for r in results]}")
 
-            print(
-                f"UPDATED => "
-                f"SUCCESS={answered} "
-                f"FAILED={failed}"
-            )
+        # ------------------------------------------------------------------
+        # RECOUNT ALL STATS from results
+        # ------------------------------------------------------------------
+        answered_count  = 0
+        busy_count      = 0
+        no_answer_count = 0
+        failed_count    = 0
+        pending_count   = 0
 
-        except VoiceCampaign.DoesNotExist:
+        for item in results:
+            raw_s  = item.get("final_status") or item.get("status") or ""
+            bucket = classify_status(raw_s)
 
-            print(
-                f"Campaign {campaign_id} not found"
-            )
+            if bucket == "answered":
+                answered_count += 1
+            elif bucket == "busy":
+                busy_count += 1
+            elif bucket == "no_answer":
+                no_answer_count += 1
+            elif bucket == "failed":
+                failed_count += 1
+            else:
+                pending_count += 1
 
-        except Exception as e:
+        campaign.success   = answered_count
+        campaign.busy      = busy_count
+        campaign.no_answer = no_answer_count
+        campaign.failed    = failed_count
+        campaign.results   = results
 
-            print(
-                "STATUS UPDATE ERROR:",
-                e
-            )
+        # Campaign done check
+        total_valid = campaign.total or 0
+        resolved    = answered_count + busy_count + no_answer_count + failed_count
+        if total_valid > 0 and resolved >= total_valid:
+            campaign.status = "done"
+
+        print(f"  COUNTS → answered={answered_count} busy={busy_count} no_answer={no_answer_count} failed={failed_count} pending={pending_count}")
+        campaign.save()
+
+        # ------------------------------------------------------------------
+        # RETRY LOGIC
+        # ------------------------------------------------------------------
+        if final_bucket in ["busy", "no_answer", "failed"]:
+            for r in results:
+                r_last10 = normalize_number(r.get("number", ""))
+                if r_last10 == to_last10:
+                    retry_count = r.get("retry_count", 0)
+                    if (
+                        campaign.retry_attempt > 0
+                        and retry_count < campaign.retry_attempt
+                    ):
+                        r["retry_count"]  = retry_count + 1
+                        campaign.results  = results
+                        campaign.save()
+
+                        from threading import Timer
+                        delay_seconds    = (campaign.retry_duration or 0) * 60
+                        number_to_retry  = r.get("number", "")
+
+                        Timer(
+                            delay_seconds,
+                            lambda n=number_to_retry: make_twilio_call(
+                                number=n,
+                                media_url=campaign.voice_file_id,
+                                campaign_id=campaign.id
+                            )
+                        ).start()
+
+                        print(f"  RETRY {retry_count+1}/{campaign.retry_attempt} for {number_to_retry} in {delay_seconds}s")
+                    break
+
+    except VoiceCampaign.DoesNotExist:
+        print(f"  Campaign {campaign_id} not found")
+    except Exception as e:
+        import traceback
+        print(f"  STATUS UPDATE ERROR: {e}")
+        traceback.print_exc()
 
     return HttpResponse("OK")
+
 
 # =====================================
 # MAKE ONE PLIVO CALL
@@ -278,8 +335,14 @@ def twilio_status(request):
 
 def make_twilio_call(number, media_url, campaign_id, retry_attempt="0"):
 
-    callback_url = f"{SERVER_URL}/api/twilio-callback/?campaign_id={campaign_id}&file={media_url}"
-    status_url   = f"{SERVER_URL}/api/twilio-status/?campaign_id={campaign_id}"
+    callback_url = (
+        f"{SERVER_URL}/api/twilio-callback/"
+        f"?campaign_id={campaign_id}&file={media_url}"
+    )
+    status_url = (
+        f"{SERVER_URL}/api/twilio-status/"
+        f"?campaign_id={campaign_id}"
+    )
 
     try:
         response = plivo_client.calls.create(
@@ -291,14 +354,38 @@ def make_twilio_call(number, media_url, campaign_id, retry_attempt="0"):
             hangup_method = "POST",
         )
 
-        call_uuid = response[1].get("request_uuid", "")
-        print("PLIVO RESPONSE =", response)
-        print("CALL UUID =", call_uuid)
+        print(f"=== PLIVO RESPONSE FULL === type={type(response)} value={response}")
+
+        call_uuid = ""
+
+        if hasattr(response, "request_uuid"):
+            call_uuid = response.request_uuid or ""
+        elif hasattr(response, "call_uuid"):
+            call_uuid = response.call_uuid or ""
+        elif isinstance(response, (list, tuple)):
+            resp_obj = response[1] if len(response) > 1 else response[0]
+            if isinstance(resp_obj, dict):
+                call_uuid = (
+                    resp_obj.get("request_uuid", "") or
+                    resp_obj.get("call_uuid", "")    or
+                    resp_obj.get("api_id", "")
+                )
+            else:
+                call_uuid = (
+                    getattr(resp_obj, "request_uuid", "") or
+                    getattr(resp_obj, "call_uuid", "")    or
+                    ""
+                )
+
+        if not call_uuid:
+            call_uuid = str(response)[:100]
+            print(f"=== PLIVO UUID FALLBACK === using str: {call_uuid}")
+
         print(f"=== PLIVO CALL CREATED === UUID={call_uuid} to={number}")
         return call_uuid
 
     except Exception as e:
-        print(f"PLIVO CALL ERROR for {number}:", e)
+        print(f"PLIVO CALL ERROR for {number}: {e}")
         return None
 
 
@@ -340,53 +427,28 @@ def login(request):
 @api_view(['POST'])
 def create_user(request):
     try:
-        # ==========================
-        # LOGIN USER CHECK
-        # ==========================
-        logged_user = User.objects.get(
-            id=request.data.get("created_by")
-        )
-
-        role = request.data.get("role", "user")
+        logged_user = User.objects.get(id=request.data.get("created_by"))
+        role        = request.data.get("role", "user")
 
         if logged_user.role == "user":
-            return Response({
-                "status": "failed",
-                "message": "Permission Denied"
-            })
+            return Response({"status": "failed", "message": "Permission Denied"})
 
-        if logged_user.role == "reseller":
-            if role == "admin":
-                return Response({
-                    "status": "failed",
-                    "message": "Reseller cannot create Admin"
-                })
+        if logged_user.role == "reseller" and role == "admin":
+            return Response({"status": "failed", "message": "Reseller cannot create Admin"})
 
-        # ==========================
-        # EXISTING LOGIC
-        # ==========================
         username        = request.data.get("username")
         password        = request.data.get("password")
         parent_username = request.data.get("parent")
 
         if not username or not password:
-            return Response({
-                "status": "failed",
-                "message": "Missing Fields"
-            })
+            return Response({"status": "failed", "message": "Missing Fields"})
 
         if User.objects.filter(username=username).exists():
-            return Response({
-                "status": "failed",
-                "message": "User Already Exists"
-            })
+            return Response({"status": "failed", "message": "User Already Exists"})
 
         parent = None
-
         if parent_username:
-            parent = User.objects.filter(
-                username=parent_username
-            ).first()
+            parent = User.objects.filter(username=parent_username).first()
 
         user = User.objects.create(
             username=username,
@@ -397,22 +459,14 @@ def create_user(request):
             status="Active"
         )
 
-        return Response({
-            "status": "success",
-            "user_id": user.id
-        })
+        return Response({"status": "success", "user_id": user.id})
 
     except User.DoesNotExist:
-        return Response({
-            "status": "failed",
-            "message": "Invalid User"
-        })
-
+        return Response({"status": "failed", "message": "Invalid User"})
     except Exception as e:
         print("CREATE USER ERROR:", e)
-        return Response({
-            "status": "error"
-        })
+        return Response({"status": "error"})
+
 
 # =====================================
 # UPDATE USER
@@ -421,9 +475,9 @@ def create_user(request):
 @api_view(['POST'])
 def update_user(request):
     try:
-        user     = User.objects.get(id=request.data.get("user_id"))
-        admin_id = request.data.get("admin_id")
-        admin    = User.objects.filter(id=admin_id).first()
+        user       = User.objects.get(id=request.data.get("user_id"))
+        admin_id   = request.data.get("admin_id")
+        admin      = User.objects.filter(id=admin_id).first()
 
         add_credit = request.data.get("add_credit", 0)
         if add_credit in ["", None]:
@@ -439,81 +493,47 @@ def update_user(request):
         if request.data.get("status"):
             user.status = request.data.get("status")
 
-        user.vc_username  = request.data.get("vc_username", user.vc_username)
-        user.vc_password  = request.data.get("vc_password", user.vc_password)
+        user.vc_username  = request.data.get("vc_username",  user.vc_username)
+        user.vc_password  = request.data.get("vc_password",  user.vc_password)
         user.vc_caller_id = request.data.get("vc_caller_id", user.vc_caller_id)
-        user.vc_plan_id   = request.data.get("vc_plan_id", user.vc_plan_id)
+        user.vc_plan_id   = request.data.get("vc_plan_id",   user.vc_plan_id)
         user.vc_call_type = request.data.get("vc_call_type", user.vc_call_type)
 
         if add_credit != 0:
-
-            # ADMIN = unlimited
             if admin and admin.role == "admin":
-
                 if add_credit > 0:
-
                     user.credit += add_credit
-
                     CreditHistory.objects.create(
-                        user=user,
-                        amount=add_credit,
-                        type="credit",
-                        remarks=f"{add_credit} Credits Added By Admin",
-                        created_by=admin
+                        user=user, amount=add_credit, type="credit",
+                        remarks=f"{add_credit} Credits Added By Admin", created_by=admin
                     )
-
                 else:
-
                     remove_amount = abs(add_credit)
-
-                    user.credit -= remove_amount
-
+                    user.credit  -= remove_amount
                     if user.credit < 0:
                         user.credit = 0
-
                     CreditHistory.objects.create(
-                        user=user,
-                        amount=remove_amount,
-                        type="debit",
-                        remarks=f"{remove_amount} Credits Removed By Admin",
-                        created_by=admin
+                        user=user, amount=remove_amount, type="debit",
+                        remarks=f"{remove_amount} Credits Removed By Admin", created_by=admin
                     )
 
-            # RESELLER TRANSFER
             elif admin and admin.role == "reseller":
-
                 if add_credit > 0:
-
                     if admin.credit < add_credit:
-
-                        return Response({
-                            "status": "failed",
-                            "message": "Insufficient Credit"
-                        })
-
+                        return Response({"status": "failed", "message": "Insufficient Credit"})
                     admin.credit -= add_credit
                     admin.save()
-
-                    user.credit += add_credit
-
+                    user.credit  += add_credit
                     CreditHistory.objects.create(
-                        user=admin,
-                        amount=add_credit,
-                        type="debit",
-                        remarks=f"{add_credit} Credits Transfer To {user.username}",
-                        created_by=admin
+                        user=admin, amount=add_credit, type="debit",
+                        remarks=f"{add_credit} Credits Transfer To {user.username}", created_by=admin
                     )
-
                     CreditHistory.objects.create(
-                        user=user,
-                        amount=add_credit,
-                        type="credit",
-                        remarks=f"{add_credit} Credits Received From {admin.username}",
-                        created_by=admin
+                        user=user, amount=add_credit, type="credit",
+                        remarks=f"{add_credit} Credits Received From {admin.username}", created_by=admin
                     )
 
         user.save()
-
         return Response({"status": "success", "credit": user.credit})
 
     except Exception as e:
@@ -521,99 +541,63 @@ def update_user(request):
         return Response({"status": "error", "message": str(e)})
 
 
+# =====================================
+# DELETE USER
+# =====================================
+
 @api_view(['POST'])
 def delete_user(request):
-
     try:
-
         user_id = request.data.get("user_id")
-
-        print("DELETE USER ID =", user_id)
-
-        all_users = User.objects.values(
-            "id",
-            "username"
-        )
-
-        print("ALL USERS =", list(all_users))
-
-        user = User.objects.filter(
-            id=user_id
-        ).first()
+        user    = User.objects.filter(id=user_id).first()
 
         if not user:
-
-            return Response({
-                "status": "failed",
-                "message": f"User ID {user_id} not found"
-            })
+            return Response({"status": "failed", "message": f"User ID {user_id} not found"})
 
         user.delete()
-
-        return Response({
-            "status": "success"
-        })
+        return Response({"status": "success"})
 
     except Exception as e:
-
         print("DELETE USER ERROR:", e)
-
-        return Response({
-            "status": "error",
-            "message": str(e)
-        })
+        return Response({"status": "error", "message": str(e)})
 
 
-
+# =====================================
+# LIST USERS
+# =====================================
 
 @api_view(['GET'])
 def list_users(request):
-
     try:
-
-        logged_user = User.objects.get(
-            id=request.GET.get("user_id")
-        )
+        logged_user = User.objects.get(id=request.GET.get("user_id"))
 
         if logged_user.role == "admin":
-
             users = User.objects.all().order_by("-id")
-
         elif logged_user.role == "reseller":
-
-            users = User.objects.filter(
-                parent=logged_user
-            ).order_by("-id")
-
+            users = User.objects.filter(parent=logged_user).order_by("-id")
         else:
-
-            users = User.objects.filter(
-                id=logged_user.id
-            )
+            users = User.objects.filter(id=logged_user.id)
 
         data = []
-
         for u in users:
-
             data.append({
-                "id": u.id,
-                "username": u.username,
-                "role": u.role,
-                "credit": u.credit,
-                "status": u.status,
-                "parent": u.parent.username if u.parent else None,
-                "created_at": u.created_at.isoformat(),
-                "vc_username": u.vc_username,
+                "id"          : u.id,
+                "username"    : u.username,
+                "role"        : u.role,
+                "credit"      : u.credit,
+                "status"      : u.status,
+                "parent"      : u.parent.username if u.parent else None,
+                "created_at"  : u.created_at.isoformat(),
+                "vc_username" : u.vc_username,
                 "vc_caller_id": u.vc_caller_id,
             })
 
         return Response(data)
 
     except Exception as e:
-
         print("LIST USERS ERROR:", e)
-
         return Response([])
+
 
 # =====================================
 # TOGGLE STATUS
@@ -657,18 +641,18 @@ def upload_media(request):
         user      = User.objects.get(id=request.data.get("user_id"))
         name      = request.data.get("name", "Untitled")
         media_url = request.data.get("media_url", "").strip()
-        caller_id  = request.data.get("caller_id", "").strip()
+        caller_id = request.data.get("caller_id", "").strip()
 
         if not media_url:
             return Response({"status": "failed", "message": "Public audio URL required"})
 
         media_obj = VoiceMediaFile.objects.create(
-    user=user,
-    name=name,
-    voice_file_id=media_url,
-    media_url=media_url,
-    caller_id=caller_id
-)
+            user=user,
+            name=name,
+            voice_file_id=media_url,
+            media_url=media_url,
+            caller_id=caller_id
+        )
 
         return Response({"status": "success", "media_id": media_obj.id})
 
@@ -711,14 +695,14 @@ def get_media_files(request):
         data = []
         for f in files:
             data.append({
-    "id"           : f.id,
-    "name"         : f.name,
-    "voice_file_id": f.voice_file_id,
-    "media_file_id": f.voice_file_id,
-    "media_url"    : f.media_url,
-    "caller_id"    : f.caller_id,
-    "created_at"   : f.created_at.isoformat(),
-})
+                "id"           : f.id,
+                "name"         : f.name,
+                "voice_file_id": f.voice_file_id,
+                "media_file_id": f.voice_file_id,
+                "media_url"    : f.media_url,
+                "caller_id"    : f.caller_id,
+                "created_at"   : f.created_at.isoformat(),
+            })
 
         return Response(data)
 
@@ -743,7 +727,7 @@ def delete_media(request):
 
 
 # =====================================
-# 🔥 SEND BULK VOICE — PLIVO OBD
+# SEND BULK VOICE
 # =====================================
 
 @api_view(['POST'])
@@ -752,76 +736,35 @@ def send_bulk_voice(request):
         user = User.objects.get(id=request.data.get("user_id"))
 
         raw_numbers = request.data.get("numbers", [])
-
         if isinstance(raw_numbers, str):
-            raw_numbers = [
-                n.strip()
-                for n in raw_numbers.split(",")
-                if n.strip()
-            ]
+            raw_numbers = [n.strip() for n in raw_numbers.split(",") if n.strip()]
 
-        media_file_id = str(
-            request.data.get("media_file_id", "")
-        ).strip()
-
-        caller_id = str(
-            request.data.get("caller_id", PLIVO_NUMBER)
-        ).strip()
-
-        plan_id = str(
-            request.data.get("plan_id", "2")
-        ).strip()
-
-        call_type = str(
-            request.data.get("call_type", "2")
-        ).strip()
-
-        retry_attempt = str(
-            request.data.get("retry_attempt", "0")
-        ).strip()
-
-        campaign_name = request.data.get(
-            "campaign_name",
-            "Untitled Campaign"
-        )
+        media_file_id = str(request.data.get("media_file_id", "")).strip()
+        caller_id     = str(request.data.get("caller_id", PLIVO_NUMBER)).strip()
+        plan_id       = str(request.data.get("plan_id",    "2")).strip()
+        call_type     = str(request.data.get("call_type",  "2")).strip()
+        retry_attempt = str(request.data.get("retry_attempt", "0")).strip()
+        campaign_name = request.data.get("campaign_name", "Untitled Campaign")
 
         if not media_file_id:
-            return Response({
-                "status": "failed",
-                "message": "Voice File (Audio URL) Required"
-            })
+            return Response({"status": "failed", "message": "Voice File (Audio URL) Required"})
 
-        valid_numbers = []
+        valid_numbers   = []
         invalid_results = []
 
         for raw in raw_numbers:
-
             cleaned = clean_number(raw)
-
             if cleaned:
                 valid_numbers.append(cleaned)
-
             else:
-                invalid_results.append({
-                    "number": raw,
-                    "status": "invalid"
-                })
+                invalid_results.append({"number": raw, "status": "invalid", "final_status": "invalid"})
 
         if not valid_numbers:
-            return Response({
-                "status": "failed",
-                "message": "No Valid Numbers"
-            })
+            return Response({"status": "failed", "message": "No Valid Numbers"})
 
-        # CREDIT CHECK
         if user.role != "admin":
-
             if user.credit < len(valid_numbers):
-
-                return Response({
-                    "status": "failed",
-                    "message": "Insufficient Credit"
-                })
+                return Response({"status": "failed", "message": "Insufficient Credit"})
 
         campaign = VoiceCampaign.objects.create(
             user=user,
@@ -833,17 +776,13 @@ def send_bulk_voice(request):
             total=len(valid_numbers),
             status="running",
             retry_attempt=int(retry_attempt),
-            retry_duration=int(
-            request.data.get("retry_duration", 0)
-            ),
-
+            retry_duration=int(request.data.get("retry_duration", 0)),
         )
 
-        results = list(invalid_results)
+        results     = list(invalid_results)
         all_job_ids = []
 
         for number in valid_numbers:
-
             call_uuid = make_twilio_call(
                 number=number,
                 media_url=media_file_id,
@@ -852,60 +791,40 @@ def send_bulk_voice(request):
             )
 
             if call_uuid:
-
                 all_job_ids.append(call_uuid)
-
                 results.append({
-                    "number": number,
-                    "status": "sent",
-                    "job_id": call_uuid,
+                    "number"      : number,
+                    "status"      : "pending",
+                    "final_status": "pending",
+                    "job_id"      : call_uuid,
+                    "retry_count" : 0,
                 })
-
             else:
-
                 results.append({
-                    "number": number,
-                    "status": "failed",
-                    "error": "Plivo API Error"
+                    "number"      : number,
+                    "status"      : "failed",
+                    "final_status": "failed",
+                    "error"       : "Plivo API Error",
                 })
 
-        # FINAL COUNTS
-        success_count = len([
-            r for r in results
-            if r["status"] == "sent"
-        ])
+        failed_count  = len([r for r in results if r["status"] == "failed"])
+        invalid_count = len([r for r in results if r["status"] == "invalid"])
 
-        failed_count = len([
-            r for r in results
-            if r["status"] == "failed"
-        ])
-
-        invalid_count = len([
-            r for r in results
-            if r["status"] == "invalid"
-        ])
-
-        campaign.success = 0
-        campaign.failed = 0
-        campaign.nonwa = invalid_count
-        campaign.job_id = ",".join(all_job_ids)
-        campaign.results = results
-        campaign.status = "running"
+        campaign.success  = 0
+        campaign.failed   = failed_count
+        campaign.nonwa    = invalid_count
+        campaign.job_id   = ",".join(all_job_ids)
+        campaign.results  = results
+        campaign.status   = "running"
         campaign.save()
-        
 
         # CREDIT DEDUCTION
         credit_used = len(valid_numbers)
-
         if user.role != "admin":
-
-            user.credit -= credit_used  
-
+            user.credit -= credit_used
             if user.credit < 0:
                 user.credit = 0
-
             user.save()
-
             CreditHistory.objects.create(
                 user=user,
                 amount=credit_used,
@@ -914,24 +833,21 @@ def send_bulk_voice(request):
             )
 
         return Response({
-            "status": "done",
-            "campaign_id": campaign.id,
-            "total": len(valid_numbers),
-            "success": success_count,
-            "failed": failed_count,
-            "invalid": invalid_count,
-            "job_ids": all_job_ids,
-            "results": results,
+            "status"          : "done",
+            "campaign_id"     : campaign.id,
+            "total"           : len(valid_numbers),
+            "success"         : 0,
+            "failed"          : failed_count,
+            "invalid"         : invalid_count,
+            "job_ids"         : all_job_ids,
+            "results"         : results,
             "remaining_credit": user.credit
         })
 
     except Exception as e:
         print("SEND BULK VOICE ERROR:", e)
+        return Response({"status": "error", "message": str(e)})
 
-        return Response({
-            "status": "error",
-            "message": str(e)
-        })
 
 # =====================================
 # SCHEDULE CAMPAIGN
@@ -973,7 +889,7 @@ def schedule_campaign(request):
             if cleaned:
                 valid_numbers.append(cleaned)
             else:
-                invalid_results.append({"number": raw, "status": "invalid"})
+                invalid_results.append({"number": raw, "status": "invalid", "final_status": "invalid"})
 
         if not valid_numbers:
             return Response({"status": "failed", "message": "No Valid Numbers"})
@@ -982,7 +898,10 @@ def schedule_campaign(request):
             if user.credit < len(valid_numbers):
                 return Response({"status": "failed", "message": "Insufficient Credit"})
 
-        pending_results = [{"number": n, "status": "pending"} for n in valid_numbers] + invalid_results
+        pending_results = (
+            [{"number": n, "status": "pending", "final_status": "pending"} for n in valid_numbers]
+            + invalid_results
+        )
 
         campaign = VoiceCampaign.objects.create(
             user=user,
@@ -1011,6 +930,54 @@ def schedule_campaign(request):
 
 
 # =====================================
+# HELPER: Results se counts compute karo
+# Campaign list aur detail dono ke liye common function
+# =====================================
+
+def compute_counts_from_campaign(campaign):
+    """
+    DB mein stored counts use karo.
+    Agar sab zero hain lekin results hain (purane campaigns),
+    tab results se live recompute karo.
+    Returns dict: answered, busy, no_answer, invalid
+    """
+    db_answered  = campaign.success   or 0
+    db_busy      = campaign.busy      or 0
+    db_no_answer = campaign.no_answer or 0
+    db_invalid   = campaign.nonwa     or 0
+
+    results = campaign.results or []
+
+    # Agar DB counts zero hain but results exist karte hain → recompute
+    if results and (db_answered + db_busy + db_no_answer) == 0:
+        a = b = n = inv = 0
+        for r in results:
+            raw_s  = r.get("final_status") or r.get("status") or ""
+            bucket = classify_status(raw_s)
+            if bucket == "answered":
+                a += 1
+            elif bucket == "busy":
+                b += 1
+            elif bucket == "no_answer":
+                n += 1
+            elif raw_s in ["invalid"]:
+                inv += 1
+        db_answered  = a
+        db_busy      = b
+        db_no_answer = n
+        if inv:
+            db_invalid = inv
+
+    return {
+    "answered": db_answered,
+    "busy": db_busy,
+    "no_answer": db_no_answer,
+    "failed": campaign.failed or 0,
+    "invalid": db_invalid,
+}
+
+
+# =====================================
 # GET CAMPAIGNS
 # =====================================
 
@@ -1030,6 +997,7 @@ def get_campaigns(request):
 
         data = []
         for c in campaigns:
+            counts = compute_counts_from_campaign(c)
             data.append({
                 "id"           : c.id,
                 "name"         : c.name,
@@ -1039,9 +1007,11 @@ def get_campaigns(request):
                 "plan_id"      : c.plan_id,
                 "call_type"    : c.call_type,
                 "total"        : c.total,
-                "success"      : c.success,
-                "failed"       : c.failed,
-                "invalid"      : c.nonwa,
+                "success"   : counts["answered"],
+                "failed"    : counts["failed"],
+                "invalid"   : counts["invalid"],
+                "no_answer"    : counts["no_answer"],
+                "busy"         : counts["busy"],
                 "job_id"       : c.job_id,
                 "status"       : c.status,
                 "scheduled_at" : c.scheduled_at.isoformat() if c.scheduled_at else None,
@@ -1065,6 +1035,7 @@ def get_campaigns(request):
 def get_campaign_detail(request):
     try:
         campaign = VoiceCampaign.objects.get(id=request.GET.get("campaign_id"))
+        counts   = compute_counts_from_campaign(campaign)
 
         return Response({
             "id"           : campaign.id,
@@ -1075,9 +1046,11 @@ def get_campaign_detail(request):
             "plan_id"      : campaign.plan_id,
             "call_type"    : campaign.call_type,
             "total"        : campaign.total,
-            "success"      : campaign.success,
-            "failed"       : campaign.failed,
-            "invalid"      : campaign.nonwa,
+            "success"   : counts["answered"],
+            "failed"    : counts["failed"],
+            "invalid"   : counts["invalid"],
+            "no_answer"    : counts["no_answer"],
+            "busy"         : counts["busy"],
             "job_id"       : campaign.job_id,
             "status"       : campaign.status,
             "scheduled_at" : campaign.scheduled_at.isoformat() if campaign.scheduled_at else None,
@@ -1088,7 +1061,6 @@ def get_campaign_detail(request):
 
     except VoiceCampaign.DoesNotExist:
         return Response({"status": "failed", "message": "Campaign not found"}, status=404)
-
     except Exception as e:
         print("GET CAMPAIGN DETAIL ERROR:", e)
         return Response({"status": "error", "message": str(e)})
