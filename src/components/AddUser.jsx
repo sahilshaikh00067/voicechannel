@@ -139,7 +139,7 @@ const AddUser = () => {
     }
 
     try {
-      const res = await fetch("https://voicecall-8m4p.onrender.com/api/create-user/", {
+      const res = await fetch("https://https://voice-backend-bqji.onrender.com/api/create-user/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

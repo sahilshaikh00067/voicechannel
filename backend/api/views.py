@@ -24,7 +24,7 @@ PLIVO_AUTH_ID    = "MAMWNINZA2NGETMWNLYY"
 PLIVO_AUTH_TOKEN = "NWI3OTQ5MGEtMmU2Yy00ZDk2LTUzNmEtZmUxNjFl"
 PLIVO_NUMBER     = "918035017649"
 
-SERVER_URL = "https://voicecall-8m4p.onrender.com"
+SERVER_URL = "https://https://voice-backend-bqji.onrender.com"
 
 plivo_client = plivo.RestClient(PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN)
 
