@@ -250,11 +250,10 @@ def twilio_status(request):
     # Priority: agar HangupCause se kuch specific mila (not pending) toh wahi use karo
     # Otherwise CallStatus use karo
     if bucket_from_cause != "pending":
-        final_bucket    = bucket_from_cause
-        status_to_store = hangup_cause_raw.lower() if hangup_cause_raw else call_status_raw.lower()
+      final_bucket = bucket_from_cause
     else:
-        final_bucket    = bucket_from_status
-        status_to_store = call_status_raw.lower()
+       final_bucket = bucket_from_status
+       status_to_store = final_bucket
 
     # Plivo To field
     raw_to    = request.POST.get("To", "")
