@@ -123,24 +123,88 @@ def classify_status(raw_status):
 
 @csrf_exempt
 def twilio_callback(request):
-    media_url   = request.GET.get("file", "")
+
+    media_url = request.GET.get("file", "")
     campaign_id = request.GET.get("campaign_id", "")
 
-    print(f"=== PLIVO XML CALLBACK === campaign={campaign_id} file={media_url}")
+    action_url = f"{SERVER_URL}/api/dtmf-input/?campaign_id={campaign_id}"
 
-    if media_url:
-        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    xml = f"""
 <Response>
-    <Play>{media_url}</Play>
-</Response>"""
-    else:
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Speak>Hello, this is a voice campaign message.</Speak>
-</Response>"""
+
+<Speak>
+Press 1 now
+</Speak>
+
+<GetDigits
+action="{action_url}"
+method="POST"
+numDigits="1"
+timeout="15">
+
+<Play>{media_url}</Play>
+
+</GetDigits>
+
+<Speak>No input received</Speak>
+
+</Response>
+"""
+
+    print(xml)
 
     return HttpResponse(xml, content_type="application/xml")
 
+
+@csrf_exempt
+def dtmf_input(request):
+
+    print("################################")
+    print("DTMF CALLBACK HIT")
+    print("GET =", dict(request.GET))
+    print("POST =", dict(request.POST))
+    print("################################")
+
+    campaign_id = request.GET.get("campaign_id")
+
+    digit = (
+        request.POST.get("Digits")
+        or request.POST.get("digits")
+        or request.POST.get("Digit")
+        or ""
+    )
+
+    call_uuid = (
+        request.POST.get("CallUUID")
+        or request.POST.get("ALegUUID")
+        or request.POST.get("RequestUUID")
+        or ""
+    )
+
+    print("DIGIT =", digit)
+    print("UUID =", call_uuid)
+
+    try:
+        campaign = VoiceCampaign.objects.get(id=campaign_id)
+
+        results = campaign.results or []
+
+        for r in results:
+            if (
+                r.get("job_id") == call_uuid
+                or call_uuid in str(r.get("job_id", ""))
+            ):
+                r["pressed_button"] = digit
+                print("BUTTON SAVED =", digit)
+                break
+
+        campaign.results = results
+        campaign.save()
+
+    except Exception as e:
+        print("DTMF SAVE ERROR =", e)
+
+    return HttpResponse("OK")
 
 # =====================================
 # CREATE ADMIN
@@ -166,6 +230,7 @@ def create_admin(request):
 
 @csrf_exempt
 def twilio_status(request):
+    print(dict(request.POST))
 
     campaign_id = request.GET.get("campaign_id", "")
 
@@ -346,13 +411,13 @@ def make_twilio_call(number, media_url, campaign_id, retry_attempt="0"):
 
     try:
         response = plivo_client.calls.create(
-            from_         = PLIVO_NUMBER,
-            to_           = number,
-            answer_url    = callback_url,
-            answer_method = "GET",
-            hangup_url    = status_url,
-            hangup_method = "POST",
-        )
+    from_=PLIVO_NUMBER,
+    to_=number,
+    answer_url=callback_url,
+    answer_method="GET",
+    hangup_url=status_url,
+    hangup_method="POST",
+    )
 
         print(f"=== PLIVO RESPONSE FULL === type={type(response)} value={response}")
 
@@ -793,12 +858,13 @@ def send_bulk_voice(request):
             if call_uuid:
                 all_job_ids.append(call_uuid)
                 results.append({
-                    "number"      : number,
-                    "status"      : "pending",
-                    "final_status": "pending",
-                    "job_id"      : call_uuid,
-                    "retry_count" : 0,
-                })
+    "number": number,
+    "status": "pending",
+    "final_status": "pending",
+    "job_id": call_uuid,
+    "retry_count": 0,
+    "pressed_button": ""
+})
             else:
                 results.append({
                     "number"      : number,
@@ -1069,6 +1135,7 @@ def get_campaign_detail(request):
 # =====================================
 # CREDIT HISTORY
 # =====================================
+
 
 @api_view(['GET'])
 def credit_history(request):
