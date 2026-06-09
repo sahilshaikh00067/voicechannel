@@ -44,7 +44,6 @@ class User(models.Model):
         default="Active"
     )
 
-    # VoiceChannel Credentials
     vc_username = models.CharField(
         max_length=100,
         blank=True,
@@ -78,10 +77,8 @@ class User(models.Model):
     )
 
     def save(self, *args, **kwargs):
-
         if self.credit < 0:
             self.credit = 0
-
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -103,19 +100,15 @@ class VoiceMediaFile(models.Model):
         max_length=255
     )
 
-    voice_file_id = models.CharField(
-        max_length=50,
-        blank=True
-    )
+    voice_file_id = models.TextField(default="")
 
-    media_url = models.URLField(
-        max_length=500
-    )
+    media_url = models.TextField(default="")
+
     caller_id = models.CharField(
-    max_length=30,
-    blank=True,
-    default=""
-)
+        max_length=200,
+        blank=True,
+        default=""
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True
@@ -153,7 +146,6 @@ class VoiceCampaign(models.Model):
 
     no_answer = models.IntegerField(default=0)
 
-    # Selected Audio
     media_file = models.ForeignKey(
         VoiceMediaFile,
         on_delete=models.SET_NULL,
@@ -161,15 +153,12 @@ class VoiceCampaign(models.Model):
         blank=True
     )
 
-    # snapshot copy
-    voice_file_id = models.CharField(
-        max_length=50,
-        blank=True
-    )
+    voice_file_id = models.TextField(blank=True, default="")
 
     caller_id = models.CharField(
-        max_length=20,
-        blank=True
+        max_length=200,
+        blank=True,
+        default=""
     )
 
     plan_id = models.CharField(
@@ -182,30 +171,17 @@ class VoiceCampaign(models.Model):
         default="2"
     )
 
-    total = models.IntegerField(
-        default=0
-    )
+    total = models.IntegerField(default=0)
 
-    success = models.IntegerField(
-        default=0
-    )
+    success = models.IntegerField(default=0)
 
-    failed = models.IntegerField(
-        default=0
-    )
+    failed = models.IntegerField(default=0)
 
-    nonwa = models.IntegerField(
-    default=0
-)
+    nonwa = models.IntegerField(default=0)
 
-    job_id = models.CharField(
-        max_length=100,
-        blank=True
-    )
+    job_id = models.TextField(blank=True, default="")
 
-    results = models.JSONField(
-        default=list
-    )
+    results = models.JSONField(default=list)
 
     status = models.CharField(
         max_length=20,
@@ -213,17 +189,18 @@ class VoiceCampaign(models.Model):
         default="pending"
     )
 
-    # For scheduled campaigns
     scheduled_at = models.DateTimeField(
         null=True,
         blank=True
     )
 
+    retry_attempt = models.IntegerField(default=0)
+
+    retry_duration = models.IntegerField(default=0)
+
     created_at = models.DateTimeField(
         auto_now_add=True
     )
-    retry_attempt = models.IntegerField(default=0)
-    retry_duration = models.IntegerField(default=0)
 
     def __str__(self):
         return f"Campaign #{self.id} - {self.name}"
