@@ -123,23 +123,58 @@ def classify_status(raw_status):
 
 @csrf_exempt
 def twilio_callback(request):
-    media_url   = request.GET.get("file", "")
+
+    media_url = request.GET.get("file", "")
     campaign_id = request.GET.get("campaign_id", "")
 
-    print(f"=== PLIVO XML CALLBACK === campaign={campaign_id} file={media_url}")
+    gather_url = (
+        f"{SERVER_URL}/api/dtmf-input/"
+        f"?campaign_id={campaign_id}"
+    )
 
-    if media_url:
-        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    xml = f"""
 <Response>
-    <Play>{media_url}</Play>
-</Response>"""
-    else:
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Speak>Hello, this is a voice campaign message.</Speak>
-</Response>"""
+
+<Play>{media_url}</Play>
+
+<Gather
+action="{gather_url}"
+method="POST"
+numDigits="1"
+timeout="10">
+
+<Speak>
+Press 1 for Sales.
+Press 2 for Support.
+Press 3 for Callback.
+</Speak>
+
+</Gather>
+
+</Response>
+"""
 
     return HttpResponse(xml, content_type="application/xml")
+
+
+
+@csrf_exempt
+def dtmf_input(request):
+
+    print("========== DTMF HIT ==========")
+    print("GET:", request.GET)
+    print("POST:", request.POST)
+    print("BODY:", request.body)
+
+    campaign_id = request.GET.get("campaign_id")
+    digit = request.POST.get("Digits", "")
+    call_uuid = request.POST.get("CallUUID", "")
+
+    print("Campaign:", campaign_id)
+    print("Digit:", digit)
+    print("UUID:", call_uuid)
+
+    return HttpResponse("OK")
 
 
 # =====================================
@@ -798,6 +833,7 @@ def send_bulk_voice(request):
                     "final_status": "pending",
                     "job_id"      : call_uuid,
                     "retry_count" : 0,
+                    "pressed_button": "",
                 })
             else:
                 results.append({
