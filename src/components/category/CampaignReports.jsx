@@ -480,17 +480,7 @@ const CampaignReports = () => {
                     ["Invalid", counts.invalid],
                     ["Caller ID", detailData.caller_id || "-"],
                     ["Job ID", detailData.job_id || "-"],
-                    <div
-                      className={`px-3 py-1 rounded-full text-xs font-bold inline-block
-  ${detailData.status === "pending"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : detailData.status === "done"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-blue-100 text-blue-700"
-                        }`}
-                    >
-                      {detailData.status}
-                    </div>, ["Voice File ID", detailData.voice_file_id || detailData.media_file_id || "-"],
+                    ["Voice File ID", detailData.voice_file_id || detailData.media_file_id || "-"],
                   ].map(([label, val], i) => (
                     <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md duration-300">
                       <p className="text-[12px] text-gray-500 uppercase tracking-wide">{label}</p>

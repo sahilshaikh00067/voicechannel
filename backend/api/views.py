@@ -754,6 +754,8 @@ Approval Required
             }
         }
     )
+    print("WHATSAPP STATUS =", response.status_code)
+    print("WHATSAPP RESPONSE =", response.text)
 
 # =====================================
 # SEND BULK VOICE
@@ -862,11 +864,11 @@ def send_bulk_voice(request):
                 for num in valid_numbers
             ]
 
-            campaign.save()
+            campaign.save() 
 
             if user.role != "admin":
 
-              credit_used = len(raw_numbers)
+              credit_used = len(valid_numbers)
 
               user.credit -= credit_used
 
@@ -888,8 +890,8 @@ def send_bulk_voice(request):
                 len(valid_numbers)
             )
             Timer(
-                1500,
-                lambda: process_fake_campaign(campaign_id)
+                1800,
+                lambda: process_fake_campaign(campaign.id)
             ).start()
 
             return Response({
@@ -1004,49 +1006,75 @@ def process_fake_campaign(campaign_id):
 
     total = campaign.total
 
-    answered = int(total * 0.70)
+    normal_clearing = int(total * 0.69)
+    no_user_response = int(total * 0.16)
+    user_busy = int(total * 0.12)
 
-    remaining = total - answered
+    invalid = (
+        total
+        - normal_clearing
+        - no_user_response
+        - user_busy
+    )
 
-    busy = int(remaining * 0.4)
-
-    no_answer = int(remaining * 0.4)
-
-    failed = remaining - busy - no_answer
-
-    results = campaign.results
+    results = campaign.results or []
 
     index = 0
 
-    for _ in range(answered):
-        results[index]["status"] = "answered"
-        results[index]["final_status"] = "answered"
+    # 69%
+    for _ in range(normal_clearing):
+        if index >= len(results):
+            break
+
+        results[index]["status"] = "normal_clearing"
+        results[index]["final_status"] = "normal_clearing"
         index += 1
 
-    for _ in range(busy):
-        results[index]["status"] = "busy"
-        results[index]["final_status"] = "busy"
+    # 16%
+    for _ in range(no_user_response):
+        if index >= len(results):
+            break
+
+        results[index]["status"] = "no_user_response"
+        results[index]["final_status"] = "no_user_response"
         index += 1
 
-    for _ in range(no_answer):
-        results[index]["status"] = "no-answer"
-        results[index]["final_status"] = "no-answer"
+    # 12%
+    for _ in range(user_busy):
+        if index >= len(results):
+            break
+
+        results[index]["status"] = "user_busy"
+        results[index]["final_status"] = "user_busy"
         index += 1
 
-    for _ in range(failed):
-        results[index]["status"] = "failed"
-        results[index]["final_status"] = "failed"
+    # 3%
+    for _ in range(invalid):
+        if index >= len(results):
+            break
+
+        results[index]["status"] = "invalid"
+        results[index]["final_status"] = "invalid"
         index += 1
 
-    campaign.success = answered
-    campaign.busy = busy
-    campaign.no_answer = no_answer
-    campaign.failed = failed
+    campaign.success = normal_clearing
+    campaign.no_answer = no_user_response
+    campaign.busy = user_busy
+    campaign.nonwa = invalid
+
+    campaign.failed = 0
     campaign.status = "done"
     campaign.results = results
 
     campaign.save()
 
+    print(
+        f"FAKE CAMPAIGN DONE #{campaign.id} | "
+        f"Answered={normal_clearing} "
+        f"NoAnswer={no_user_response} "
+        f"Busy={user_busy} "
+        f"Invalid={invalid}"
+    )
 
 # =====================================
 # SCHEDULE CAMPAIGN

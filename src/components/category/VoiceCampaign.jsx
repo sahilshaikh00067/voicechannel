@@ -532,12 +532,8 @@ export default function VoiceCampaign() {
           alert.info(
             `Campaign submitted successfully.
 
-More than 20 numbers detected.
-
-Admin approval requested.
-
 Status: Pending`,
-            "Campaign Queued ⏳"
+            "Campaign Send ⏳"
           );
 
         } else {
@@ -545,10 +541,10 @@ Status: Pending`,
           alert.success(
             `Campaign sent!
 
-Total: ${data.total}
-Sent: ${data.success}
-Failed: ${data.failed}
-Invalid: ${data.invalid}`,
+            Total: ${data.total}
+            Sent: ${data.success}
+            Failed: ${data.failed}
+            Invalid: ${data.invalid}`,
             "Campaign Sent 🚀"
           );
 
