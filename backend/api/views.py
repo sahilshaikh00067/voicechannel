@@ -740,7 +740,7 @@ Total Numbers : {total}
 Approval Required
 """
 
-    requests.post(
+    response = requests.post(
         "https://graph.facebook.com/v22.0/xxxxx/messages",
         headers={
             "Authorization": "Bearer TOKEN"
