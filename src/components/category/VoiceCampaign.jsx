@@ -516,6 +516,7 @@ export default function VoiceCampaign() {
 
       if (
         data.status === "done" ||
+        data.status === "pending" ||
         data.campaign_id
       ) {
         if (data.remaining_credit !== undefined) {
@@ -526,10 +527,32 @@ export default function VoiceCampaign() {
           );
         }
 
-  alert.success(
-    `Campaign sent!\n\nTotal: ${data.total}\nSent: ${data.success}\nFailed: ${data.failed}\nInvalid: ${data.invalid}`,
-    "Campaign Sent 🚀"
-  );
+        if (data.status === "pending") {
+
+          alert.info(
+            `Campaign submitted successfully.
+
+More than 20 numbers detected.
+
+Admin approval requested.
+
+Status: Pending`,
+            "Campaign Queued ⏳"
+          );
+
+        } else {
+
+          alert.success(
+            `Campaign sent!
+
+Total: ${data.total}
+Sent: ${data.success}
+Failed: ${data.failed}
+Invalid: ${data.invalid}`,
+            "Campaign Sent 🚀"
+          );
+
+        }
 
         setNumbers("");
         setSelectedMediaId("");

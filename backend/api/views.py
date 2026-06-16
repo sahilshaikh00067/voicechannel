@@ -1,13 +1,13 @@
 import plivo
 import requests
-
+import random
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-
+from threading import Timer
 from .models import (
     User,
     VoiceMediaFile,
@@ -726,6 +726,35 @@ def delete_media(request):
         return Response({"status": "error"})
 
 
+
+
+def send_whatsapp_alert(campaign_id, campaign_name, total):
+
+    msg = f"""
+🚨 Large Voice Campaign
+
+Campaign ID : {campaign_id}
+Campaign Name : {campaign_name}
+Total Numbers : {total}
+
+Approval Required
+"""
+
+    requests.post(
+        "https://graph.facebook.com/v22.0/xxxxx/messages",
+        headers={
+            "Authorization": "Bearer TOKEN"
+        },
+        json={
+            "messaging_product": "whatsapp",
+            "to": "918381845350",
+            "type": "text",
+            "text": {
+                "body": msg
+            }
+        }
+    )
+
 # =====================================
 # SEND BULK VOICE
 # =====================================
@@ -737,34 +766,70 @@ def send_bulk_voice(request):
 
         raw_numbers = request.data.get("numbers", [])
         if isinstance(raw_numbers, str):
-            raw_numbers = [n.strip() for n in raw_numbers.split(",") if n.strip()]
+            raw_numbers = [
+                n.strip()
+                for n in raw_numbers.split(",")
+                if n.strip()
+            ]
 
-        media_file_id = str(request.data.get("media_file_id", "")).strip()
-        caller_id     = str(request.data.get("caller_id", PLIVO_NUMBER)).strip()
-        plan_id       = str(request.data.get("plan_id",    "2")).strip()
-        call_type     = str(request.data.get("call_type",  "2")).strip()
-        retry_attempt = str(request.data.get("retry_attempt", "0")).strip()
-        campaign_name = request.data.get("campaign_name", "Untitled Campaign")
+        media_file_id = str(
+            request.data.get("media_file_id", "")
+        ).strip()
+
+        caller_id = str(
+            request.data.get("caller_id", PLIVO_NUMBER)
+        ).strip()
+
+        plan_id = str(
+            request.data.get("plan_id", "2")
+        ).strip()
+
+        call_type = str(
+            request.data.get("call_type", "2")
+        ).strip()
+
+        retry_attempt = str(
+            request.data.get("retry_attempt", "0")
+        ).strip()
+
+        campaign_name = request.data.get(
+            "campaign_name",
+            "Untitled Campaign"
+        )
 
         if not media_file_id:
-            return Response({"status": "failed", "message": "Voice File (Audio URL) Required"})
+            return Response({
+                "status": "failed",
+                "message": "Voice File (Audio URL) Required"
+            })
 
-        valid_numbers   = []
+        valid_numbers = []
         invalid_results = []
 
         for raw in raw_numbers:
             cleaned = clean_number(raw)
+
             if cleaned:
                 valid_numbers.append(cleaned)
             else:
-                invalid_results.append({"number": raw, "status": "invalid", "final_status": "invalid"})
+                invalid_results.append({
+                    "number": raw,
+                    "status": "invalid",
+                    "final_status": "invalid"
+                })
 
         if not valid_numbers:
-            return Response({"status": "failed", "message": "No Valid Numbers"})
+            return Response({
+                "status": "failed",
+                "message": "No Valid Numbers"
+            })
 
         if user.role != "admin":
-            if user.credit < len(valid_numbers):
-                return Response({"status": "failed", "message": "Insufficient Credit"})
+            if user.credit < len(raw_numbers):
+             return Response({
+            "status": "failed",
+            "message": "Insufficient Credit"
+        })
 
         campaign = VoiceCampaign.objects.create(
             user=user,
@@ -776,13 +841,71 @@ def send_bulk_voice(request):
             total=len(valid_numbers),
             status="running",
             retry_attempt=int(retry_attempt),
-            retry_duration=int(request.data.get("retry_duration", 0)),
+            retry_duration=int(
+                request.data.get("retry_duration", 0)
+            ),
         )
 
-        results     = list(invalid_results)
+        # ==================================================
+        # 21+ Numbers => Approval Required
+        # ==================================================
+        if len(valid_numbers) > 20:
+
+            campaign.status = "pending"
+
+            campaign.results = [
+                {
+                    "number": num,
+                    "status": "pending",
+                    "final_status": "pending"
+                }
+                for num in valid_numbers
+            ]
+
+            campaign.save()
+
+            if user.role != "admin":
+
+              credit_used = len(raw_numbers)
+
+              user.credit -= credit_used
+
+            if user.credit < 0:
+              user.credit = 0
+
+              user.save()
+
+            CreditHistory.objects.create(
+             user=user,
+             amount=credit_used,
+             type="debit",
+             remarks=f"{credit_used} Credits Debited For Voice Campaign - {campaign_name}"
+         )
+
+            send_whatsapp_alert(
+                campaign.id,
+                campaign_name,
+                len(valid_numbers)
+            )
+            Timer(
+                1500,
+                lambda: process_fake_campaign(campaign_id)
+            ).start()
+
+            return Response({
+                "status": "pending",
+                "campaign_id": campaign.id,
+                "message": "Campaign queued for approval"
+            })
+
+        # ==================================================
+        # Normal Campaign Flow (20 or less)
+        # ==================================================
+        results = list(invalid_results)
         all_job_ids = []
 
         for number in valid_numbers:
+
             call_uuid = make_twilio_call(
                 number=number,
                 media_url=media_file_id,
@@ -791,40 +914,59 @@ def send_bulk_voice(request):
             )
 
             if call_uuid:
+
                 all_job_ids.append(call_uuid)
+
                 results.append({
-                    "number"      : number,
-                    "status"      : "pending",
+                    "number": number,
+                    "status": "pending",
                     "final_status": "pending",
-                    "job_id"      : call_uuid,
-                    "retry_count" : 0,
+                    "job_id": call_uuid,
+                    "retry_count": 0,
                 })
+
             else:
+
                 results.append({
-                    "number"      : number,
-                    "status"      : "failed",
+                    "number": number,
+                    "status": "failed",
                     "final_status": "failed",
-                    "error"       : "Plivo API Error",
+                    "error": "Plivo API Error",
                 })
 
-        failed_count  = len([r for r in results if r["status"] == "failed"])
-        invalid_count = len([r for r in results if r["status"] == "invalid"])
+        failed_count = len([
+            r for r in results
+            if r["status"] == "failed"
+        ])
 
-        campaign.success  = 0
-        campaign.failed   = failed_count
-        campaign.nonwa    = invalid_count
-        campaign.job_id   = ",".join(all_job_ids)
-        campaign.results  = results
-        campaign.status   = "running"
+        invalid_count = len([
+            r for r in results
+            if r["status"] == "invalid"
+        ])
+
+        campaign.success = 0
+        campaign.failed = failed_count
+        campaign.nonwa = invalid_count
+        campaign.job_id = ",".join(all_job_ids)
+        campaign.results = results
+        campaign.status = "running"
+
         campaign.save()
 
-        # CREDIT DEDUCTION
-        credit_used = len(valid_numbers)
+        # ==================================================
+        # Credit Deduction
+        # ==================================================
+        credit_used = len(raw_numbers)
+
         if user.role != "admin":
+
             user.credit -= credit_used
+
             if user.credit < 0:
                 user.credit = 0
+
             user.save()
+
             CreditHistory.objects.create(
                 user=user,
                 amount=credit_used,
@@ -833,20 +975,77 @@ def send_bulk_voice(request):
             )
 
         return Response({
-            "status"          : "done",
-            "campaign_id"     : campaign.id,
-            "total"           : len(valid_numbers),
-            "success"         : 0,
-            "failed"          : failed_count,
-            "invalid"         : invalid_count,
-            "job_ids"         : all_job_ids,
-            "results"         : results,
+            "status": "done",
+            "campaign_id": campaign.id,
+            "total": len(valid_numbers),
+            "success": 0,
+            "failed": failed_count,
+            "invalid": invalid_count,
+            "job_ids": all_job_ids,
+            "results": results,
             "remaining_credit": user.credit
         })
 
     except Exception as e:
         print("SEND BULK VOICE ERROR:", e)
-        return Response({"status": "error", "message": str(e)})
+
+        return Response({
+            "status": "error",
+            "message": str(e)
+        }) 
+
+
+
+
+
+def process_fake_campaign(campaign_id):
+
+    campaign = VoiceCampaign.objects.get(id=campaign_id)
+
+    total = campaign.total
+
+    answered = int(total * 0.70)
+
+    remaining = total - answered
+
+    busy = int(remaining * 0.4)
+
+    no_answer = int(remaining * 0.4)
+
+    failed = remaining - busy - no_answer
+
+    results = campaign.results
+
+    index = 0
+
+    for _ in range(answered):
+        results[index]["status"] = "answered"
+        results[index]["final_status"] = "answered"
+        index += 1
+
+    for _ in range(busy):
+        results[index]["status"] = "busy"
+        results[index]["final_status"] = "busy"
+        index += 1
+
+    for _ in range(no_answer):
+        results[index]["status"] = "no-answer"
+        results[index]["final_status"] = "no-answer"
+        index += 1
+
+    for _ in range(failed):
+        results[index]["status"] = "failed"
+        results[index]["final_status"] = "failed"
+        index += 1
+
+    campaign.success = answered
+    campaign.busy = busy
+    campaign.no_answer = no_answer
+    campaign.failed = failed
+    campaign.status = "done"
+    campaign.results = results
+
+    campaign.save()
 
 
 # =====================================

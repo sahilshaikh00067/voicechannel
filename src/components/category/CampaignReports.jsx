@@ -17,25 +17,25 @@ function classifyStatus(raw) {
   const s = String(raw || "").trim().toLowerCase();
   if (s === "completed" || s === "answered") return "answered";
   if (s === "busy") return "busy";
-  if (["no-answer","no_answer","noanswer","no answer","rejected","cancelled","canceled"].includes(s))
+  if (["no-answer", "no_answer", "noanswer", "no answer", "rejected", "cancelled", "canceled"].includes(s))
     return "no_answer";
   if (s === "failed") return "failed";
   return "pending";
 }
 
 const CampaignReports = () => {
-  const [filterOpen, setFilterOpen]           = useState(false);
-  const [selectedFilter, setSelectedFilter]   = useState("Today");
-  const [entries, setEntries]                 = useState([]);
-  const [search, setSearch]                   = useState("");
-  const [showEntries, setShowEntries]         = useState(10);
-  const [page, setPage]                       = useState(1);
-  const [loading, setLoading]                 = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState("Today");
+  const [entries, setEntries] = useState([]);
+  const [search, setSearch] = useState("");
+  const [showEntries, setShowEntries] = useState(10);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   // Detail modal
-  const [showDetail, setShowDetail]           = useState(false);
-  const [detailData, setDetailData]           = useState(null);
-  const [detailLoading, setDetailLoading]     = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const filters = ["Today", "Yesterday", "Last 7 Days", "Last 30 Days", "This Month", "Last Month"];
 
@@ -45,8 +45,8 @@ const CampaignReports = () => {
     try {
       setLoading(true);
       const userId = sessionStorage.getItem("user_id");
-      const res    = await fetch(`${BASE}/get-campaigns/?user_id=${userId}`);
-      const data   = await res.json();
+      const res = await fetch(`${BASE}/get-campaigns/?user_id=${userId}`);
+      const data = await res.json();
 
       if (!data || data.length === 0) {
         setEntries([]);
@@ -83,17 +83,17 @@ const CampaignReports = () => {
         // ✅ FIX: API se jo values aaye wahi directly use karo
         // Backend already classify karke deta hai (views.py mein fix hai)
         return {
-          id         : r.id,
-          date       : new Date(r.created_at).toLocaleDateString(),
-          name       : r.name || `Campaign ${i + 1}`,
-          totalCount : Number(r.total     || 0),
-          answered   : Number(r.success   || 0),
-          noAnswer   : Number(r.no_answer || 0),
-          busy       : Number(r.busy      || 0),
-          invalid    : Number(r.invalid   || 0),
-          jobId      : r.job_id    || "",
-          status     : r.status    || "",
-          callerId   : r.caller_id || "",
+          id: r.id,
+          date: new Date(r.created_at).toLocaleDateString(),
+          name: r.name || `Campaign ${i + 1}`,
+          totalCount: Number(r.total || 0),
+          answered: Number(r.success || 0),
+          noAnswer: Number(r.no_answer || 0),
+          busy: Number(r.busy || 0),
+          invalid: Number(r.invalid || 0),
+          jobId: r.job_id || "",
+          status: r.status || "",
+          callerId: r.caller_id || "",
         };
       });
 
@@ -109,7 +109,7 @@ const CampaignReports = () => {
   const loadDetail = async (campaignId) => {
     try {
       setDetailLoading(true);
-      const res  = await fetch(`${BASE}/get-campaign-detail/?campaign_id=${campaignId}`);
+      const res = await fetch(`${BASE}/get-campaign-detail/?campaign_id=${campaignId}`);
       const data = await res.json();
       setDetailData(data);
       setShowDetail(true);
@@ -129,12 +129,12 @@ const CampaignReports = () => {
     }
 
     const rows = detailData.results.map((r) => ({
-      Number: r.number       || "",
+      Number: r.number || "",
       Status: r.final_status || r.status || "",
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook  = XLSX.utils.book_new();
+    const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
     worksheet["!cols"] = [{ wch: 20 }, { wch: 20 }];
     XLSX.writeFile(workbook, `${detailData.name || "campaign"}_report.xlsx`);
@@ -145,28 +145,28 @@ const CampaignReports = () => {
   );
 
   const totalPages = Math.ceil(filteredEntries.length / showEntries);
-  const paginated  = filteredEntries.slice((page - 1) * showEntries, page * showEntries);
+  const paginated = filteredEntries.slice((page - 1) * showEntries, page * showEntries);
 
   // ✅ Detail modal mein bhi recompute from results as fallback
-const getDetailCounts = () => {
-  if (!detailData) {
-    return {
-      answered: 0,
-      busy: 0,
-      noAnswer: 0,
-      failed: 0,
-      invalid: 0,
-    };
-  }
+  const getDetailCounts = () => {
+    if (!detailData) {
+      return {
+        answered: 0,
+        busy: 0,
+        noAnswer: 0,
+        failed: 0,
+        invalid: 0,
+      };
+    }
 
-  return {
-    answered: Number(detailData.success || 0),
-    busy: Number(detailData.busy || 0),
-    noAnswer: Number(detailData.no_answer || 0),
-    failed: Number(detailData.failed || 0),
-    invalid: Number(detailData.invalid || 0),
+    return {
+      answered: Number(detailData.success || 0),
+      busy: Number(detailData.busy || 0),
+      noAnswer: Number(detailData.no_answer || 0),
+      failed: Number(detailData.failed || 0),
+      invalid: Number(detailData.invalid || 0),
+    };
   };
-};
 
   return (
     <div className="min-h-screen bg-[#efefef] p-3 md:p-5 overflow-x-hidden">
@@ -244,7 +244,18 @@ const getDetailCounts = () => {
             <table className="w-full min-w-[900px]">
               <thead>
                 <tr className="bg-[#fafafa]">
-                  {["Date", "Name", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Invalid", "View"].map((head, i) => (
+                  {[
+                    "Date",
+                    "Name",
+                    "Status",
+                    "Caller ID",
+                    "Total",
+                    "Answered",
+                    "No Answer",
+                    "Busy",
+                    "Invalid",
+                    "View"
+                  ].map((head, i) => (
                     <th key={i} className="border-r border-b border-[#e6e6e6] px-3 py-4 text-left">
                       <div className="flex items-center gap-1 text-[13px] md:text-[15px] font-[700] text-black whitespace-nowrap">
                         {head}
@@ -263,6 +274,19 @@ const getDetailCounts = () => {
                   <tr key={index} className="hover:bg-gray-50 duration-200">
                     <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.date}</td>
                     <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.name}</td>
+                    <td className="px-3 py-4 border-b border-[#ececec]">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-bold
+                       ${item.status === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : item.status === "done"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-blue-100 text-blue-700"
+                          }`}
+                      >
+                        {item.status}
+                      </span>
+                    </td>
                     <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.callerId || "-"}</td>
                     <td className="px-3 py-4 border-b border-[#ececec] text-[13px] font-semibold">{item.totalCount}</td>
                     <td className="px-3 py-4 border-b border-[#ececec] text-[13px] text-green-600 font-semibold">{item.answered}</td>
@@ -361,17 +385,17 @@ const getDetailCounts = () => {
                         <PieChart>
                           <Pie
                             data={[
-                              { name: "Answered",  value: counts.answered  },
-                              { name: "No Answer", value: counts.noAnswer  },
-                              { name: "Busy",      value: counts.busy      },
-                              { name: "Invalid",   value: counts.invalid   },
+                              { name: "Answered", value: counts.answered },
+                              { name: "No Answer", value: counts.noAnswer },
+                              { name: "Busy", value: counts.busy },
+                              { name: "Invalid", value: counts.invalid },
                             ].filter(d => d.value > 0).length > 0
                               ? [
-                                  { name: "Answered",  value: counts.answered  },
-                                  { name: "No Answer", value: counts.noAnswer  },
-                                  { name: "Busy",      value: counts.busy      },
-                                  { name: "Invalid",   value: counts.invalid   },
-                                ]
+                                { name: "Answered", value: counts.answered },
+                                { name: "No Answer", value: counts.noAnswer },
+                                { name: "Busy", value: counts.busy },
+                                { name: "Invalid", value: counts.invalid },
+                              ]
                               : [{ name: "No Data", value: 1 }]
                             }
                             dataKey="value"
@@ -448,15 +472,25 @@ const getDetailCounts = () => {
                 {/* DETAIL CARDS GRID */}
                 <div className="grid md:grid-cols-2 gap-4 mb-6">
                   {[
-                    ["Total",         detailData.total],
-                    ["Answered",      counts.answered],
-                    ["No Answer",     counts.noAnswer],
-                    ["Busy",          counts.busy],
-                    ["Invalid",       counts.invalid],
-                    ["Caller ID",     detailData.caller_id  || "-"],
-                    ["Job ID",        detailData.job_id     || "-"],
-                    ["Status",        detailData.status],
-                    ["Voice File ID", detailData.voice_file_id || detailData.media_file_id || "-"],
+                    ["Campaign Status", detailData.status],
+                    ["Total", detailData.total],
+                    ["Answered", counts.answered],
+                    ["No Answer", counts.noAnswer],
+                    ["Busy", counts.busy],
+                    ["Invalid", counts.invalid],
+                    ["Caller ID", detailData.caller_id || "-"],
+                    ["Job ID", detailData.job_id || "-"],
+                    <div
+                      className={`px-3 py-1 rounded-full text-xs font-bold inline-block
+  ${detailData.status === "pending"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : detailData.status === "done"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                    >
+                      {detailData.status}
+                    </div>, ["Voice File ID", detailData.voice_file_id || detailData.media_file_id || "-"],
                   ].map(([label, val], i) => (
                     <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md duration-300">
                       <p className="text-[12px] text-gray-500 uppercase tracking-wide">{label}</p>
@@ -478,18 +512,18 @@ const getDetailCounts = () => {
                       <tbody>
                         {detailData.results.slice(0, 100).map((r, i) => {
                           const bucket = classifyStatus(r.final_status || r.status || "");
-                          const badge  =
+                          const badge =
                             bucket === "answered"
                               ? "bg-green-100 text-green-700"
                               : bucket === "busy"
-                              ? "bg-orange-100 text-orange-700"
-                              : bucket === "no_answer"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : bucket === "failed"
-                              ? "bg-red-100 text-red-600"
-                              : (r.status === "invalid" || r.final_status === "invalid")
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-blue-100 text-blue-700"; // pending
+                                ? "bg-orange-100 text-orange-700"
+                                : bucket === "no_answer"
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : bucket === "failed"
+                                    ? "bg-red-100 text-red-600"
+                                    : (r.status === "invalid" || r.final_status === "invalid")
+                                      ? "bg-amber-100 text-amber-700"
+                                      : "bg-blue-100 text-blue-700"; // pending
 
                           return (
                             <tr key={i} className="border-b hover:bg-pink-50 duration-200">
