@@ -729,34 +729,33 @@ def delete_media(request):
 
 
 def send_whatsapp_alert(campaign_id, campaign_name, total):
+    try:
+        msg = f"""
+Large Voice Campaign
 
-    msg = f"""
-🚨 Large Voice Campaign
-
-Campaign ID : {campaign_id}
-Campaign Name : {campaign_name}
-Total Numbers : {total}
+Campaign ID: {campaign_id}
+Campaign Name: {campaign_name}
+Total Numbers: {total}
 
 Approval Required
 """
 
-    response = requests.post(
-        "https://graph.facebook.com/v22.0/xxxxx/messages",
-        headers={
-            "Authorization": "Bearer TOKEN"
-        },
-        json={
-            "messaging_product": "whatsapp",
-            "to": "918381845350",
-            "type": "text",
-            "text": {
-                "body": msg
-            }
-        }
+        response = requests.get(
+    "https://int.chatway.in/api/send-msg",
+    params={
+        "username": "APIDEMO",
+        "number": "8381845350",
+        "message": msg,
+        "token": "NzVNSkxTdWhkeCtLT3RIYlZkNmRIUT09"
+    },
+    timeout=30
     )
-    print("WHATSAPP STATUS =", response.status_code)
-    print("WHATSAPP RESPONSE =", response.text)
 
+        print("SMS STATUS =", response.status_code)
+        print("SMS RESPONSE =", response.text)
+
+    except Exception as e:
+        print("SMS ALERT ERROR =", str(e))
 # =====================================
 # SEND BULK VOICE
 # =====================================
@@ -767,6 +766,7 @@ def send_bulk_voice(request):
         user = User.objects.get(id=request.data.get("user_id"))
 
         raw_numbers = request.data.get("numbers", [])
+
         if isinstance(raw_numbers, str):
             raw_numbers = [
                 n.strip()
@@ -809,6 +809,7 @@ def send_bulk_voice(request):
         invalid_results = []
 
         for raw in raw_numbers:
+
             cleaned = clean_number(raw)
 
             if cleaned:
@@ -826,12 +827,13 @@ def send_bulk_voice(request):
                 "message": "No Valid Numbers"
             })
 
+        # CREDIT CHECK
         if user.role != "admin":
-            if user.credit < len(raw_numbers):
-             return Response({
-            "status": "failed",
-            "message": "Insufficient Credit"
-        })
+            if user.credit < len(valid_numbers):
+                return Response({
+                    "status": "failed",
+                    "message": "Insufficient Credit"
+                })
 
         campaign = VoiceCampaign.objects.create(
             user=user,
@@ -849,9 +851,13 @@ def send_bulk_voice(request):
         )
 
         # ==================================================
-        # 21+ Numbers => Approval Required
+        # 21+ NUMBERS -> PENDING APPROVAL
         # ==================================================
         if len(valid_numbers) > 20:
+
+            print("PENDING CAMPAIGN")
+            print("VALID NUMBERS =", len(valid_numbers))
+            print("USER CREDIT BEFORE =", user.credit)
 
             campaign.status = "pending"
 
@@ -864,46 +870,54 @@ def send_bulk_voice(request):
                 for num in valid_numbers
             ]
 
-            campaign.save() 
+            campaign.save()
 
+            # CREDIT DEDUCT
             if user.role != "admin":
 
-              credit_used = len(valid_numbers)
+                credit_used = len(valid_numbers)
 
-              user.credit -= credit_used
+                user.credit -= credit_used
 
-            if user.credit < 0:
-              user.credit = 0
+                if user.credit < 0:
+                    user.credit = 0
 
-              user.save()
+                user.save()
 
-            CreditHistory.objects.create(
-             user=user,
-             amount=credit_used,
-             type="debit",
-             remarks=f"{credit_used} Credits Debited For Voice Campaign - {campaign_name}"
-         )
+                CreditHistory.objects.create(
+                    user=user,
+                    amount=credit_used,
+                    type="debit",
+                    remarks=f"{credit_used} Credits Debited For Voice Campaign - {campaign_name}"
+                )
+
+                print("USER CREDIT AFTER =", user.credit)
+
+            print("SENDING ALERT SMS...")
 
             send_whatsapp_alert(
                 campaign.id,
                 campaign_name,
                 len(valid_numbers)
             )
+
             Timer(
-                1800,
+                500,
                 lambda: process_fake_campaign(campaign.id)
             ).start()
 
             return Response({
                 "status": "pending",
                 "campaign_id": campaign.id,
-                "message": "Campaign queued for approval"
+                "message": "Campaign queued for approval",
+                "remaining_credit": user.credit
             })
 
         # ==================================================
-        # Normal Campaign Flow (20 or less)
+        # NORMAL CAMPAIGN (20 OR LESS)
         # ==================================================
         results = list(invalid_results)
+
         all_job_ids = []
 
         for number in valid_numbers:
@@ -955,12 +969,10 @@ def send_bulk_voice(request):
 
         campaign.save()
 
-        # ==================================================
-        # Credit Deduction
-        # ==================================================
-        credit_used = len(raw_numbers)
-
+        # CREDIT DEDUCT
         if user.role != "admin":
+
+            credit_used = len(valid_numbers)
 
             user.credit -= credit_used
 
@@ -989,12 +1001,16 @@ def send_bulk_voice(request):
         })
 
     except Exception as e:
-        print("SEND BULK VOICE ERROR:", e)
+
+        import traceback
+
+        print("SEND BULK VOICE ERROR:", str(e))
+        traceback.print_exc()
 
         return Response({
             "status": "error",
             "message": str(e)
-        }) 
+        })
 
 
 
