@@ -20,9 +20,9 @@ from .models import (
 # ⚙️  PLIVO CONFIG
 # =====================================
 
-PLIVO_AUTH_ID    = "MAMWNINZA2NGETMWNLYY"
-PLIVO_AUTH_TOKEN = "NWI3OTQ5MGEtMmU2Yy00ZDk2LTUzNmEtZmUxNjFl"
-PLIVO_NUMBER     = "918035017649"
+PLIVO_AUTH_ID    = "MAMDZJNWZMYJGTNZAXYS"
+PLIVO_AUTH_TOKEN = "MDliZGI4ZDEtZjA2ZS00NDlmLTQxYTQtMWQ0NDhl"
+PLIVO_NUMBER     = "918031831400"
 
 SERVER_URL = "https://voice-backend-bqji.onrender.com"
 

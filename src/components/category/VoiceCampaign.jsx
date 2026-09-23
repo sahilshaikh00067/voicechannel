@@ -390,7 +390,7 @@ export default function VoiceCampaign() {
       const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
       const nums = lines
         .map((line) => line.split(",")[0].trim())
-        .filter((n) => /^\d+$/.test(n));
+        .filter((n) => /^[6-9]\d{9}$/.test(n));
       if (nums.length > 0) {
         setNumbers((prev) =>
           prev ? prev + "," + nums.join(",") : nums.join(",")
@@ -408,10 +408,16 @@ export default function VoiceCampaign() {
   // TEST CALL
   // ==============================
   const handleTestCall = async () => {
-    if (!testNumber) {
-      alert.warning("Please enter a mobile number.", "Number Required");
+    const cleanTestNumber = String(testNumber).replace(/\D/g, "");
+
+    if (!isValidIndianMobile(cleanTestNumber)) {
+      alert.warning(
+        "Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9.",
+        "Invalid Mobile Number"
+      );
       return;
     }
+
     if (!selectedMediaId) {
       alert.warning("Please select a voice file first.", "Voice File Missing");
       return;
@@ -424,7 +430,7 @@ export default function VoiceCampaign() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userId,
-          numbers: [testNumber],
+          numbers: [cleanTestNumber],
           media_file_id: selectedMediaId,
           caller_id: callerId,
           plan_id: voicePlan,
@@ -448,15 +454,250 @@ export default function VoiceCampaign() {
   };
 
   // ==============================
-  // NUMBERS CHANGE
+  // INDIAN MOBILE NUMBER HELPERS
   // ==============================
+  const isValidIndianMobile = (value) => /^[6-9]\d{9}$/.test(String(value));
+
+  // Extract completed Indian mobile numbers from pasted/imported text.
+  // Supports 10-digit numbers and +91 / 91 prefixed 12-digit numbers.
+  const extractIndianNumbers = (raw) => {
+    const text = String(raw ?? "");
+    const tokens = text
+      .replace(/[\r\n\t;|]+/g, ",")
+      .split(/[\s,]+/)
+      .map((x) => x.replace(/\D/g, ""))
+      .filter(Boolean);
+
+    const result = [];
+
+    for (const token of tokens) {
+      let n = token;
+
+      if (n.length === 12 && n.startsWith("91")) {
+        n = n.slice(2);
+      }
+
+      // A token may contain multiple 10-digit numbers after cleaning.
+      if (n.length > 10 && n.length % 10 === 0) {
+        for (let i = 0; i < n.length; i += 10) {
+          const part = n.slice(i, i + 10);
+          if (isValidIndianMobile(part)) result.push(part);
+        }
+      } else if (isValidIndianMobile(n)) {
+        result.push(n);
+      }
+    }
+
+    return [...new Set(result)];
+  };
+
+  const parseStoredNumbers = (raw) => {
+    const text = String(raw ?? "").replace(/\r/g, "");
+    const completed = [];
+    let current = "";
+
+    text.split("").forEach((ch) => {
+      if (/\d/.test(ch)) {
+        current += ch;
+        if (current.length === 10) {
+          if (isValidIndianMobile(current)) completed.push(current);
+          current = "";
+        }
+      } else if (ch === "," || /\s/.test(ch) || ch === ";" || ch === "|") {
+        if (current.length === 10 && isValidIndianMobile(current)) {
+          completed.push(current);
+        }
+        current = "";
+      }
+    });
+
+    if (current.length === 10 && isValidIndianMobile(current)) {
+      completed.push(current);
+      current = "";
+    }
+
+    return {
+      completed: [...new Set(completed)],
+      incomplete: current,
+    };
+  };
+
+  const buildNumbersText = (completed, incomplete = "") => {
+    const unique = [...new Set(completed.filter(isValidIndianMobile))];
+    if (!unique.length && !incomplete) return "";
+
+    let result = unique.join(",");
+    if (incomplete) {
+      result += `${result ? "," : ""}${incomplete}`;
+    }
+
+    // Automatically put comma after every completed number.
+    if (!incomplete && result) result += ",";
+    return result;
+  };
+
+  // Add ONE digit strictly at the end. Clicking anywhere else cannot change
+  // the position where the digit is inserted.
+  const appendDigitToNumbers = (digit) => {
+    if (!/^\d$/.test(digit)) return;
+
+    setNumbers((prev) => {
+      const parsed = parseStoredNumbers(prev);
+      let incomplete = parsed.incomplete;
+
+      // A new number must begin with 6/7/8/9.
+      if (!incomplete && !/[6-9]/.test(digit)) {
+        return buildNumbersText(parsed.completed, "");
+      }
+
+      if (incomplete.length >= 10) return buildNumbersText(parsed.completed, "");
+
+      incomplete += digit;
+
+      if (incomplete.length === 10) {
+        if (!isValidIndianMobile(incomplete)) {
+          // Invalid first digit / invalid number: don't add it.
+          return buildNumbersText(parsed.completed, "");
+        }
+
+        return buildNumbersText([...parsed.completed, incomplete], "");
+      }
+
+      return buildNumbersText(parsed.completed, incomplete);
+    });
+  };
+
+  const removeLastNumberCharacter = () => {
+    setNumbers((prev) => {
+      const parsed = parseStoredNumbers(prev);
+
+      if (parsed.incomplete) {
+        return buildNumbersText(parsed.completed, parsed.incomplete.slice(0, -1));
+      }
+
+      if (!parsed.completed.length) return "";
+
+      const completed = [...parsed.completed];
+      const last = completed.pop();
+      const remaining = last.slice(0, -1);
+
+      if (remaining) {
+        return buildNumbersText(completed, remaining);
+      }
+
+      return buildNumbersText(completed, "");
+    });
+  };
+
+  const moveNumbersCaretToEnd = (e) => {
+    const el = e.currentTarget;
+    requestAnimationFrame(() => {
+      const end = el.value.length;
+      try {
+        el.setSelectionRange(end, end);
+      } catch (_) {}
+    });
+  };
+
+  const handleNumbersKeyDown = (e) => {
+    const el = e.currentTarget;
+
+    // DIGITS: never let the browser insert at the clicked position.
+    if (/^\d$/.test(e.key)) {
+      e.preventDefault();
+      appendDigitToNumbers(e.key);
+      requestAnimationFrame(() => {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      });
+      return;
+    }
+
+    // BACKSPACE / DELETE: only remove from the very end.
+    if (e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+      removeLastNumberCharacter();
+      requestAnimationFrame(() => {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      });
+      return;
+    }
+
+    // Comma/Enter only move the caret to the end. Commas are automatic.
+    if (e.key === "," || e.key === "Enter") {
+      e.preventDefault();
+      requestAnimationFrame(() => {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      });
+      return;
+    }
+
+    // Never allow navigation/editing inside the existing numbers.
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+      e.preventDefault();
+      requestAnimationFrame(() => {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      });
+      return;
+    }
+
+    // Block letters and symbols.
+    if (e.key.length === 1) {
+      e.preventDefault();
+    }
+  };
+
+  const handleNumbersPaste = (e) => {
+    e.preventDefault();
+
+    const pasted = e.clipboardData?.getData("text") || "";
+    const pastedNumbers = extractIndianNumbers(pasted);
+    if (!pastedNumbers.length) return;
+
+    setNumbers((prev) => {
+      const existing = extractIndianNumbers(prev);
+      return buildNumbersText([...existing, ...pastedNumbers], "");
+    });
+
+    requestAnimationFrame(() => {
+      const el = e.currentTarget;
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
+  };
+
+  const handleNumbersDrop = (e) => {
+    e.preventDefault();
+
+    const dropped = e.dataTransfer?.getData("text") || "";
+    const droppedNumbers = extractIndianNumbers(dropped);
+    if (!droppedNumbers.length) return;
+
+    setNumbers((prev) => {
+      const existing = extractIndianNumbers(prev);
+      return buildNumbersText([...existing, ...droppedNumbers], "");
+    });
+
+    requestAnimationFrame(() => {
+      const el = e.currentTarget;
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
+  };
+
+  // If the browser tries to mutate the controlled textarea directly,
+  // immediately put the caret back at the end. Keyboard input itself is
+  // handled manually above, so existing numbers cannot be edited in-place.
   const handleNumbersChange = (e) => {
-    const raw = e.target.value;
-    const formatted = raw
-      .replace(/[\s\n]+/g, ",")
-      .replace(/,+/g, ",")
-      .replace(/^,/, "");
-    setNumbers(formatted);
+    const el = e.currentTarget;
+    e.preventDefault?.();
+    requestAnimationFrame(() => {
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
   };
 
   // ==============================
@@ -477,10 +718,21 @@ export default function VoiceCampaign() {
     ];
 
     if (numberList.length === 0) {
-      alert.warning("Please enter at least one number.", "Numbers Required");
+      alert.warning("Please enter at least one valid 10-digit Indian mobile number (starting with 6-9).", "Invalid Number");
       setLoading(false);
       return;
     }
+
+    const invalidNumbers = numberList.filter((n) => !isValidIndianMobile(n));
+    if (invalidNumbers.length > 0) {
+      alert.error(
+        `Only valid 10-digit Indian mobile numbers are allowed. Invalid numbers: ${invalidNumbers.slice(0, 5).join(", ")}${invalidNumbers.length > 5 ? "..." : ""}`,
+        "Invalid Numbers"
+      );
+      setLoading(false);
+      return;
+    }
+
     if (!selectedMediaId) {
       alert.warning("Please select a voice file.", "Voice File Required");
       setLoading(false);
@@ -583,9 +835,19 @@ Status: Pending`,
     ];
 
     if (numberList.length === 0) {
-      alert.warning("Please enter at least one number.", "Numbers Required");
+      alert.warning("Please enter at least one valid 10-digit Indian mobile number (starting with 6-9).", "Invalid Number");
       return;
     }
+
+    const invalidNumbers = numberList.filter((n) => !isValidIndianMobile(n));
+    if (invalidNumbers.length > 0) {
+      alert.error(
+        `Only valid 10-digit Indian mobile numbers are allowed. Invalid numbers: ${invalidNumbers.slice(0, 5).join(", ")}${invalidNumbers.length > 5 ? "..." : ""}`,
+        "Invalid Numbers"
+      );
+      return;
+    }
+
     if (!selectedMediaId) {
       alert.warning("Please select a voice file.", "Voice File Required");
       return;
@@ -748,7 +1010,18 @@ Status: Pending`,
             <textarea
               value={numbers}
               onChange={handleNumbersChange}
-              placeholder="Enter Number"
+              onFocus={moveNumbersCaretToEnd}
+              onClick={moveNumbersCaretToEnd}
+              onKeyDown={handleNumbersKeyDown}
+              onPaste={handleNumbersPaste}
+              onDrop={handleNumbersDrop}
+              onDragOver={(e) => e.preventDefault()}
+              onSelect={moveNumbersCaretToEnd}
+              inputMode="numeric"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Enter 10-digit Indian mobile numbers"
               className="w-full h-[240px] border border-gray-300 rounded-2xl p-5 outline-none resize-none focus:border-pink-400 text-[14px] shadow-sm"
             />
           </div>
