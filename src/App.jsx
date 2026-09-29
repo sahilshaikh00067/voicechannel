@@ -23,24 +23,30 @@ function App() {
 
   return (
     <Routes>
+
       {/* 🔥 DEFAULT */}
       <Route path="/" element={<Navigate to="/login" />} />
+
       {/* 🔓 PUBLIC */}
       <Route path="/login" element={<Login />} />
-      {/* 🔒 PROTECTED */}
+
+      {/* 🔒 PROTECTED (login-check only) */}
       <Route element={<AdminRoute />}>
+
         {/* 🔥 HEADER LAYOUT */}
         <Route element={<Header />}>
+
+          {/* ✅ ALL ROLES: admin, reseller, user */}
           <Route path="/dashboard" element={<Dashboard />} />
-          {/* ✅ ALL USERS */}
           <Route path="/voicecampaign" element={<VoiceCampaign />} />
           {/* <Route path="/resendvoice" element={<ResendVoice />} /> */}
           <Route path="/campaignreports" element={<CampaignReports />} />
           <Route path="/audiofile" element={<AudioFile />} />
-          <Route path="/schedulereport" element={<ScheduleReport />} />
+          {/* <Route path="/schedulereport" element={<ScheduleReport />} /> */}
           <Route path="/changepassword" element={<ChangePassword />} />
           <Route path="/logout" element={<Logout />} />
-          {/* 🔥 ADMIN + RESELLER ONLY */}
+
+          {/* 🔒 ADMIN + RESELLER ONLY (user ke liye block) */}
           <Route
             path="/adduser"
             element={

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Eye, Download,
+  RotateCw, ChevronDown, X, Search, Download, ChevronsUpDown, Eye,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BASE } from "../api";
@@ -24,7 +24,6 @@ function classifyStatus(raw) {
 }
 
 const CampaignReports = () => {
-  const [filterOpen, setFilterOpen] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("Today");
   const [entries, setEntries] = useState([]);
   const [search, setSearch] = useState("");
@@ -144,7 +143,7 @@ const CampaignReports = () => {
     item.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredEntries.length / showEntries);
+  const totalPages = Math.ceil(filteredEntries.length / showEntries) || 1;
   const paginated = filteredEntries.slice((page - 1) * showEntries, page * showEntries);
 
   // ✅ Detail modal mein bhi recompute from results as fallback
@@ -169,167 +168,162 @@ const CampaignReports = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#efefef] p-3 md:p-5 overflow-x-hidden">
-      <div className="w-full bg-[#f3f3f3] rounded-[20px] border border-[#ef7fa4] overflow-hidden shadow-sm">
+    <div className="min-h-screen bg-[#eef0f5] p-3 md:p-5">
+      {/* TABS */}
+      <div className="flex items-center gap-1">
+        <div className="px-5 py-2.5 bg-[#3d4b94] text-white text-[14px] font-[600] rounded-t-lg">
+          Reports
+        </div>
+      </div>
 
-        {/* HEADER */}
-        <div className="bg-[#ececec] border-b border-[#e5e5e5] px-4 md:px-7 py-5">
-          <h1 className="text-[18px] md:text-[24px] font-[700] text-black uppercase">Campaign Report</h1>
+      {/* FILTER CARD */}
+      <div className="bg-white rounded-b-lg rounded-tr-lg border border-[#e2e5ec] shadow-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#eee]">
+          <h2 className="text-[14px] font-[600] text-black">Campaign Report</h2>
+          <div className="flex items-center gap-2 text-[12px] text-gray-500">
+            <RotateCw size={15} className="cursor-pointer" onClick={loadReports} />
+            <span>Dashboard &gt; Voice &gt; Reports &gt; Campaign Report &gt; Version: v1.0</span>
+          </div>
         </div>
 
-        <div className="px-3 md:px-6 py-6">
-
-          {/* TOP */}
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
-            <div className="relative">
-              <button
-                onClick={() => setFilterOpen(!filterOpen)}
-                className="h-[42px] px-5 rounded-full bg-[#e36f97] text-white flex items-center gap-2 text-[14px] md:text-[16px] font-[500]"
-              >
-                <CalendarDays size={16} />
-                {selectedFilter}
-                <ChevronDown size={14} />
-              </button>
-              {filterOpen && (
-                <div className="absolute left-0 top-[52px] bg-white w-[180px] rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
-                  {filters.map((item, i) => (
-                    <div
-                      key={i}
-                      onClick={() => { setSelectedFilter(item); setFilterOpen(false); }}
-                      className="px-4 py-2 hover:bg-pink-50 cursor-pointer text-[14px]"
-                    >
-                      {item}
-                    </div>
+        <div className="px-5 py-6 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-5">
+          {/* LEFT COLUMN */}
+          <div className="space-y-5">
+            <div className="flex items-center gap-4">
+              <label className="w-[110px] text-[13px] text-gray-600 shrink-0">Date Filter</label>
+              <div className="relative flex-1">
+                <select
+                  value={selectedFilter}
+                  onChange={(e) => setSelectedFilter(e.target.value)}
+                  className="w-full h-[38px] appearance-none border border-[#dcdfe6] rounded-md bg-[#f7f8fa] px-3 pr-16 text-[13px] outline-none"
+                >
+                  {filters.map((f) => (
+                    <option key={f} value={f}>{f}</option>
                   ))}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-gray-400 pointer-events-none">
+                  <ChevronDown size={14} />
                 </div>
-              )}
+              </div>
             </div>
+          </div>
+        </div>
+      </div>
 
-            <button
-              onClick={loadReports}
-              className="h-[42px] px-5 rounded-full bg-gray-200 text-gray-700 text-[14px] font-medium hover:bg-gray-300"
+      {/* CAMPAIGN LIST CARD */}
+      <div className="bg-white rounded-lg border border-[#e2e5ec] shadow-sm mt-4">
+        <div className="px-5 py-4 border-b border-[#eee]">
+          <h2 className="text-[14px] font-[600] text-black">Campaign List</h2>
+        </div>
+
+        <div className="px-5 pt-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-[13px] text-gray-600">
+            <span>Show</span>
+            <select
+              value={showEntries}
+              onChange={(e) => { setShowEntries(Number(e.target.value)); setPage(1); }}
+              className="w-[70px] h-[36px] border border-[#dcdfe6] rounded-md px-2 text-[13px] outline-none bg-[#f7f8fa]"
             >
-              🔄 Refresh
-            </button>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+            <span>entries</span>
           </div>
 
-          {/* SHOW + SEARCH */}
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-5">
-            <div className="flex items-center gap-2 text-[14px] md:text-[16px] text-black">
-              <span>Show</span>
-              <select
-                value={showEntries}
-                onChange={(e) => { setShowEntries(Number(e.target.value)); setPage(1); }}
-                className="w-[70px] h-[40px] border border-[#d9d9d9] rounded-lg px-2 text-[14px] outline-none bg-white"
-              >
-                <option value="10">10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-              </select>
-              <span>entries</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] md:text-[16px]">Search:</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[13px] text-gray-500">Search:</span>
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                className="w-[180px] md:w-[240px] h-[40px] border border-[#d8d8d8] rounded-lg px-3 outline-none bg-white text-[14px]"
+                placeholder="Enter keyword"
+                className="w-[200px] h-[36px] border border-[#dcdfe6] rounded-md pl-8 pr-3 text-[13px] outline-none"
               />
             </div>
           </div>
+        </div>
 
-          {/* TABLE */}
-          <div className="w-full overflow-x-auto rounded-[14px] border border-[#e2e2e2] bg-white">
-            <table className="w-full min-w-[900px]">
-              <thead>
-                <tr className="bg-[#fafafa]">
-                  {[
-                    "Date",
-                    "Name",
-                    "Status",
-                    "Caller ID",
-                    "Total",
-                    "Answered",
-                    "No Answer",
-                    "Busy",
-                    "Invalid",
-                    "View"
-                  ].map((head, i) => (
-                    <th key={i} className="border-r border-b border-[#e6e6e6] px-3 py-4 text-left">
-                      <div className="flex items-center gap-1 text-[13px] md:text-[15px] font-[700] text-black whitespace-nowrap">
-                        {head}
-                        <ChevronsUpDown size={14} className="text-[#d3d3d3]" />
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan="9" className="text-center py-10 text-[15px]">Loading...</td></tr>
-                ) : paginated.length === 0 ? (
-                  <tr><td colSpan="9" className="text-center py-10 text-[15px] text-black">No data available in table</td></tr>
-                ) : paginated.map((item, index) => (
-                  <tr key={index} className="hover:bg-gray-50 duration-200">
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.date}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.name}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec]">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-bold
-                       ${item.status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : item.status === "done"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-blue-100 text-blue-700"
-                          }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px]">{item.callerId || "-"}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px] font-semibold">{item.totalCount}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px] text-green-600 font-semibold">{item.answered}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px] text-yellow-600 font-semibold">{item.noAnswer}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px] text-orange-600 font-semibold">{item.busy}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec] text-[13px] text-red-600 font-semibold">{item.invalid}</td>
-                    <td className="px-3 py-4 border-b border-[#ececec]">
-                      <button
-                        onClick={() => loadDetail(item.id)}
-                        disabled={detailLoading}
-                        className="w-[34px] h-[34px] rounded-full bg-pink-100 flex items-center justify-center disabled:opacity-50"
-                      >
-                        <Eye size={15} />
-                      </button>
-                    </td>
-                  </tr>
+        <div className="px-5 py-4 overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="bg-[#f5f6f9]">
+                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Invalid", "View"].map((h) => (
+                  <th key={h} className="px-3 py-3 text-left border-b border-[#eee]">
+                    <div className="flex items-center gap-1 text-[12px] font-[700] text-gray-700 whitespace-nowrap">
+                      {h}
+                      {h !== "View" && <ChevronsUpDown size={12} className="text-gray-300" />}
+                    </div>
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="10" className="text-center py-10 text-[13px] text-gray-500">Loading...</td></tr>
+              ) : paginated.length === 0 ? (
+                <tr><td colSpan="10" className="text-center py-10 text-[13px] text-gray-500">No data available in table</td></tr>
+              ) : paginated.map((item) => (
+                <tr key={item.id} className="hover:bg-[#fafbfc] duration-150">
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px] whitespace-nowrap">{item.date}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px] text-[#3d4b94] font-[600]">{item.name}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">
+                    <span
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold
+                       ${item.status === "pending"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : item.status === "done"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.callerId || "-"}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.totalCount}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.answered}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.noAnswer}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.busy}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.invalid}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1]">
+                    <button
+                      onClick={() => loadDetail(item.id)}
+                      disabled={detailLoading}
+                      className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-white bg-[#3d4b94] hover:bg-[#323d78] disabled:opacity-50"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-          {/* FOOTER PAGINATION */}
-          <div className="flex items-center justify-between flex-wrap gap-4 mt-6">
-            <div className="text-[13px] md:text-[15px] text-black">
-              Showing {filteredEntries.length === 0 ? 0 : (page - 1) * showEntries + 1} to{" "}
-              {Math.min(page * showEntries, filteredEntries.length)} of {filteredEntries.length} entries
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="bg-[#e36f97] hover:bg-[#d95f89] disabled:opacity-50 text-white px-5 h-[42px] rounded-full flex items-center gap-1 text-[13px] md:text-[14px] duration-200"
-              >
-                <ChevronLeft size={15} /> Previous
+        {/* FOOTER */}
+        <div className="px-5 pb-5 flex items-center justify-between flex-wrap gap-3">
+          <div className="text-[12.5px] text-gray-500">
+            Showing {filteredEntries.length === 0 ? 0 : (page - 1) * showEntries + 1} to{" "}
+            {Math.min(page * showEntries, filteredEntries.length)} of {filteredEntries.length} entries
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(1)} disabled={page === 1}
+              className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">«</button>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+              className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">‹</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 4).map((p) => (
+              <button key={p} onClick={() => setPage(p)}
+                className={`w-[30px] h-[30px] rounded-md text-[12px] ${page === p ? "bg-[#3d4b94] text-white" : "border border-[#dcdfe6] text-gray-600"}`}>
+                {p}
               </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="bg-[#e36f97] hover:bg-[#d95f89] disabled:opacity-50 text-white px-5 h-[42px] rounded-full flex items-center gap-1 text-[13px] md:text-[14px] duration-200"
-              >
-                Next <ChevronRight size={15} />
-              </button>
-            </div>
+            ))}
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+              className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">›</button>
+            <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+              className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">»</button>
           </div>
         </div>
       </div>
@@ -341,38 +335,38 @@ const CampaignReports = () => {
         const counts = getDetailCounts();
         return (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[24px] w-full max-w-[950px] max-h-[90vh] overflow-y-auto shadow-[0_25px_80px_rgba(0,0,0,0.18)]">
+            <div className="bg-white rounded-lg w-full max-w-[950px] max-h-[90vh] overflow-y-auto shadow-xl border border-[#e2e5ec]">
 
               {/* MODAL HEADER */}
-              <div className="flex justify-between items-center px-6 py-5 border-b bg-gradient-to-r from-pink-50 via-white to-pink-50 sticky top-0 z-10">
+              <div className="flex justify-between items-center px-5 py-4 border-b border-[#eee] bg-white sticky top-0 z-10">
                 <div>
-                  <h2 className="text-[24px] font-black text-gray-800">Campaign Detail</h2>
-                  <p className="text-[13px] text-gray-500 mt-1">{detailData.name}</p>
+                  <h2 className="text-[14px] font-[600] text-black">Campaign Detail</h2>
+                  <p className="text-[12px] text-gray-500 mt-0.5">{detailData.name}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={downloadExcel}
-                    className="flex items-center gap-2 bg-[#e36f97] hover:bg-[#d95f89] text-white px-5 h-[40px] rounded-full text-[13px] font-semibold duration-300 shadow-lg"
+                    className="flex items-center gap-2 bg-[#3d4b94] hover:bg-[#323d78] text-white px-5 h-[38px] rounded-md text-[13px] font-[600]"
                   >
                     <Download size={15} />
                     Download Excel
                   </button>
                   <button
                     onClick={() => setShowDetail(false)}
-                    className="w-[40px] h-[40px] rounded-full bg-gray-100 hover:bg-gray-200 text-[22px] duration-300"
+                    className="w-[36px] h-[36px] rounded-md border border-[#dcdfe6] text-gray-600 flex items-center justify-center"
                   >
-                    ×
+                    <X size={16} />
                   </button>
                 </div>
               </div>
 
-              <div className="p-6">
+              <div className="p-5">
 
                 {/* ANALYTICS */}
-                <div className="bg-gradient-to-br from-white via-pink-50 to-purple-50 border border-pink-100 rounded-[24px] p-6 shadow-lg mb-6">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-[20px] font-black text-gray-800">Campaign Analytics</h3>
-                    <div className="bg-pink-100 text-pink-700 px-4 py-2 rounded-full text-[13px] font-bold">
+                <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
+                  <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+                    <h3 className="text-[14px] font-[600] text-black">Campaign Analytics</h3>
+                    <div className="border border-[#dcdfe6] bg-[#f7f8fa] text-[#3d4b94] px-4 py-1.5 rounded-md text-[12.5px] font-[600]">
                       Total Calls : {detailData.total}
                     </div>
                   </div>
@@ -380,7 +374,7 @@ const CampaignReports = () => {
                   <div className="grid lg:grid-cols-2 gap-6 items-center">
 
                     {/* DONUT CHART */}
-                    <div className="relative h-[300px]">
+                    <div className="relative h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -399,8 +393,8 @@ const CampaignReports = () => {
                               : [{ name: "No Data", value: 1 }]
                             }
                             dataKey="value"
-                            innerRadius={80}
-                            outerRadius={120}
+                            innerRadius={75}
+                            outerRadius={110}
                             paddingAngle={6}
                             animationDuration={2000}
                           >
@@ -413,55 +407,55 @@ const CampaignReports = () => {
                       </ResponsiveContainer>
 
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <h2 className="text-[40px] font-black text-gray-900">{detailData.total}</h2>
-                        <p className="text-[13px] text-gray-500 font-medium">Total Calls</p>
+                        <h2 className="text-[32px] font-[800] text-gray-900">{detailData.total}</h2>
+                        <p className="text-[12.5px] text-gray-500 font-medium">Total Calls</p>
                       </div>
                     </div>
 
                     {/* STATS CARDS */}
-                    <div className="space-y-4">
+                    <div className="space-y-3">
 
                       {/* Answered */}
-                      <div className="bg-[#c7e0f49e] border border-blue-100 rounded-2xl p-5 hover:scale-[1.02] duration-300 shadow-sm">
+                      <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="text-[#4baaf5] text-[13px] font-medium">Answered Calls</p>
-                            <h3 className="text-[30px] font-black text-[#4baaf5] mt-1">{counts.answered}</h3>
+                            <p className="text-[#4baaf5] text-[12.5px] font-[600]">Answered Calls</p>
+                            <h3 className="text-[22px] font-[800] text-[#4baaf5] mt-1">{counts.answered}</h3>
                           </div>
-                          <div className="w-5 h-5 rounded-full bg-[#4baaf5] animate-pulse" />
+                          <div className="w-3 h-3 rounded-full bg-[#4baaf5]" />
                         </div>
                       </div>
 
                       {/* No Answer */}
-                      <div className="bg-yellow-50 border border-yellow-100 rounded-2xl p-5 hover:scale-[1.02] duration-300 shadow-sm">
+                      <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="text-[#e6b843] text-[13px] font-medium">No Answer</p>
-                            <h3 className="text-[30px] font-black text-[#e6b843] mt-1">{counts.noAnswer}</h3>
+                            <p className="text-[#e6b843] text-[12.5px] font-[600]">No Answer</p>
+                            <h3 className="text-[22px] font-[800] text-[#e6b843] mt-1">{counts.noAnswer}</h3>
                           </div>
-                          <div className="w-5 h-5 rounded-full bg-[#fccc55] animate-pulse" />
+                          <div className="w-3 h-3 rounded-full bg-[#fccc55]" />
                         </div>
                       </div>
 
                       {/* Busy */}
-                      <div className="bg-orange-50 border border-orange-100 rounded-2xl p-5 hover:scale-[1.02] duration-300 shadow-sm">
+                      <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="text-[#ff8a00] text-[13px] font-medium">Busy Calls</p>
-                            <h3 className="text-[30px] font-black text-[#ff8a00] mt-1">{counts.busy}</h3>
+                            <p className="text-[#ff8a00] text-[12.5px] font-[600]">Busy Calls</p>
+                            <h3 className="text-[22px] font-[800] text-[#ff8a00] mt-1">{counts.busy}</h3>
                           </div>
-                          <div className="w-5 h-5 rounded-full bg-[#ff8a00] animate-pulse" />
+                          <div className="w-3 h-3 rounded-full bg-[#ff8a00]" />
                         </div>
                       </div>
 
                       {/* Invalid */}
-                      <div className="bg-red-50 border border-red-100 rounded-2xl p-5 hover:scale-[1.02] duration-300 shadow-sm">
+                      <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="text-red-600 text-[13px] font-medium">Invalid Calls</p>
-                            <h3 className="text-[30px] font-black text-red-700 mt-1">{counts.invalid}</h3>
+                            <p className="text-red-600 text-[12.5px] font-[600]">Invalid Calls</p>
+                            <h3 className="text-[22px] font-[800] text-red-700 mt-1">{counts.invalid}</h3>
                           </div>
-                          <div className="w-5 h-5 rounded-full bg-red-500 animate-pulse" />
+                          <div className="w-3 h-3 rounded-full bg-red-500" />
                         </div>
                       </div>
 
@@ -470,7 +464,7 @@ const CampaignReports = () => {
                 </div>
 
                 {/* DETAIL CARDS GRID */}
-                <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <div className="grid md:grid-cols-2 gap-3 mb-4">
                   {[
                     ["Campaign Status", detailData.status],
                     ["Total", detailData.total],
@@ -482,21 +476,21 @@ const CampaignReports = () => {
                     ["Job ID", detailData.job_id || "-"],
                     ["Voice File ID", detailData.voice_file_id || detailData.media_file_id || "-"],
                   ].map(([label, val], i) => (
-                    <div key={i} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md duration-300">
-                      <p className="text-[12px] text-gray-500 uppercase tracking-wide">{label}</p>
-                      <p className="text-[18px] font-bold text-gray-800 mt-1 break-all">{val}</p>
+                    <div key={i} className="bg-white border border-[#e2e5ec] rounded-md p-4">
+                      <p className="text-[11px] text-gray-500 uppercase tracking-wide">{label}</p>
+                      <p className="text-[14px] font-[700] text-gray-800 mt-1 break-all">{val}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* RESULTS TABLE */}
                 {detailData.results && detailData.results.length > 0 && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm">
+                  <div className="overflow-x-auto rounded-md border border-[#e2e5ec]">
                     <table className="w-full min-w-[500px]">
                       <thead>
-                        <tr className="bg-gradient-to-r from-pink-50 to-white">
-                          <th className="px-4 py-4 text-left text-[13px] font-bold border-b">Number</th>
-                          <th className="px-4 py-4 text-left text-[13px] font-bold border-b">Status</th>
+                        <tr className="bg-[#f5f6f9]">
+                          <th className="px-4 py-3 text-left text-[12px] font-[700] text-gray-700 border-b border-[#eee]">Number</th>
+                          <th className="px-4 py-3 text-left text-[12px] font-[700] text-gray-700 border-b border-[#eee]">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -516,8 +510,8 @@ const CampaignReports = () => {
                                       : "bg-blue-100 text-blue-700"; // pending
 
                           return (
-                            <tr key={i} className="border-b hover:bg-pink-50 duration-200">
-                              <td className="px-4 py-3 text-[13px] font-medium">{r.number}</td>
+                            <tr key={i} className="border-b border-[#f1f1f1] hover:bg-[#fafbfc] duration-150">
+                              <td className="px-4 py-3 text-[12.5px] font-[500]">{r.number}</td>
                               <td className="px-4 py-3">
                                 <span className={`px-3 py-1 rounded-full text-[11px] font-bold ${badge}`}>
                                   {r.final_status || r.status}

@@ -1,352 +1,140 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { useDropzone } from "react-dropzone";
-import { FaUsers, FaPaperPlane, FaLayerGroup, FaCalendarAlt } from "react-icons/fa";
+import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
+import {
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  X,
+  FileSpreadsheet,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+} from "lucide-react";
 import { BASE } from "../api";
 
-// ==============================
-// CUSTOM ALERT SYSTEM
-// ==============================
-const AlertModal = ({ alerts, removeAlert }) => {
-  const iconMap = {
-    success: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}>
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="9 12 11 14 15 10" />
-      </svg>
-    ),
-    error: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}>
-        <circle cx="12" cy="12" r="10" />
-        <line x1="15" y1="9" x2="9" y2="15" />
-        <line x1="9" y1="9" x2="15" y2="15" />
-      </svg>
-    ),
-    info: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}>
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="8" x2="12" y2="12" />
-        <line x1="12" y1="16" x2="12.01" y2="16" />
-      </svg>
-    ),
-    warning: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}>
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-        <line x1="12" y1="9" x2="12" y2="13" />
-        <line x1="12" y1="17" x2="12.01" y2="17" />
-      </svg>
-    ),
-  };
+const ACCENT = "#3F51B5";
 
-  const colorMap = {
-    success: {
-      bg: "#f0fdf4",
-      border: "#86efac",
-      icon: "#16a34a",
-      title: "#15803d",
-      text: "#166534",
-      btn: "#16a34a",
-      btnHover: "#15803d",
-      bar: "#22c55e",
-    },
-    error: {
-      bg: "#fff1f2",
-      border: "#fda4af",
-      icon: "#e11d48",
-      title: "#be123c",
-      text: "#9f1239",
-      btn: "#e11d48",
-      btnHover: "#be123c",
-      bar: "#f43f5e",
-    },
-    info: {
-      bg: "#eff6ff",
-      border: "#93c5fd",
-      icon: "#2563eb",
-      title: "#1d4ed8",
-      text: "#1e40af",
-      btn: "#2563eb",
-      btnHover: "#1d4ed8",
-      bar: "#3b82f6",
-    },
-    warning: {
-      bg: "#fffbeb",
-      border: "#fcd34d",
-      icon: "#d97706",
-      title: "#b45309",
-      text: "#92400e",
-      btn: "#d97706",
-      btnHover: "#b45309",
-      bar: "#f59e0b",
-    },
-  };
+const pad = (n) => String(n).padStart(2, "0");
+const defaultExpireTime = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} 20:59:00`;
+};
 
+function Section({ title, isOpen, onToggle, children }) {
   return (
-    <>
-      <style>{`
-        @keyframes alertSlideIn {
-          from { opacity: 0; transform: translateY(-40px) scale(0.92); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes alertSlideOut {
-          from { opacity: 1; transform: translateY(0) scale(1); }
-          to   { opacity: 0; transform: translateY(-40px) scale(0.92); }
-        }
-        @keyframes progressBar {
-          from { width: 100%; }
-          to   { width: 0%; }
-        }
-        @keyframes backdropIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        .alert-modal-box {
-          animation: alertSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-        }
-        .alert-modal-box.removing {
-          animation: alertSlideOut 0.25s ease-in forwards;
-        }
-        .alert-close-btn:hover {
-          opacity: 0.75;
-          transform: scale(1.1);
-        }
-      `}</style>
-
-      {alerts.map((alert) => {
-        const c = colorMap[alert.type] || colorMap.info;
-        return (
-          <div
-            key={alert.id}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.45)",
-              backdropFilter: "blur(4px)",
-              WebkitBackdropFilter: "blur(4px)",
-              zIndex: 99999,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              animation: "backdropIn 0.2s ease forwards",
-            }}
-            onClick={() => removeAlert(alert.id)}
-          >
-            <div
-              className={`alert-modal-box ${alert.removing ? "removing" : ""}`}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: c.bg,
-                border: `1.5px solid ${c.border}`,
-                borderRadius: 20,
-                padding: "36px 40px 30px",
-                maxWidth: 420,
-                width: "90%",
-                textAlign: "center",
-                position: "relative",
-                overflow: "hidden",
-                boxShadow: "0 25px 60px rgba(0,0,0,0.18), 0 8px 20px rgba(0,0,0,0.1)",
-              }}
-            >
-              {/* Progress bar */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  height: 4,
-                  background: c.bar,
-                  borderRadius: "20px 20px 0 0",
-                  animation: `progressBar ${alert.duration || 3500}ms linear forwards`,
-                }}
-              />
-
-              {/* Close button */}
-              <button
-                className="alert-close-btn"
-                onClick={() => removeAlert(alert.id)}
-                style={{
-                  position: "absolute",
-                  top: 14,
-                  right: 14,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: c.icon,
-                  fontSize: 20,
-                  lineHeight: 1,
-                  transition: "all 0.2s",
-                  padding: 4,
-                }}
-              >
-                ✕
-              </button>
-
-              {/* Icon circle */}
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: "50%",
-                  background: `${c.border}55`,
-                  border: `2px solid ${c.border}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  margin: "0 auto 18px",
-                  color: c.icon,
-                }}
-              >
-                {iconMap[alert.type]}
-              </div>
-
-              {/* Title */}
-              {alert.title && (
-                <h3 style={{
-                  margin: "0 0 8px",
-                  fontSize: 20,
-                  fontWeight: 700,
-                  color: c.title,
-                  letterSpacing: "-0.3px",
-                }}>
-                  {alert.title}
-                </h3>
-              )}
-
-              {/* Message */}
-              <p style={{
-                margin: "0 0 24px",
-                fontSize: 15,
-                color: c.text,
-                lineHeight: 1.6,
-                whiteSpace: "pre-line",
-              }}>
-                {alert.message}
-              </p>
-
-              {/* OK Button */}
-              <button
-                onClick={() => removeAlert(alert.id)}
-                style={{
-                  background: c.btn,
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 12,
-                  padding: "11px 40px",
-                  fontSize: 15,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  letterSpacing: "0.3px",
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = c.btnHover;
-                  e.target.style.transform = "scale(1.04)";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = c.btn;
-                  e.target.style.transform = "scale(1)";
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </>
+    <div className="bg-white border border-gray-200 border-l-3 border-l-[#3F51B5] border-t-3 border-t-[#dfe0e4] border-b-3 border-b-[#dfe0e4] rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <span className="font-semibold text-gray-800 text-[15px]">{title}</span>
+        {isOpen ? (
+          <ChevronUp size={18} className="text-gray-500" />
+        ) : (
+          <ChevronDown size={18} className="text-gray-500" />
+        )}
+      </button>
+      {isOpen && (
+        <div className="px-5 pb-5 pt-1 border-t border-gray-100">{children}</div>
+      )}
+    </div>
   );
-};
+}
 
-// ==============================
-// useAlert HOOK
-// ==============================
-const useAlert = () => {
-  const [alerts, setAlerts] = useState([]);
-
-  const removeAlert = useCallback((id) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, removing: true } : a))
-    );
-    setTimeout(() => {
-      setAlerts((prev) => prev.filter((a) => a.id !== id));
-    }, 280);
-  }, []);
-
-  const showAlert = useCallback(
-    ({ type = "info", title, message, duration = 3500 }) => {
-      const id = Date.now() + Math.random();
-      setAlerts((prev) => [...prev, { id, type, title, message, duration }]);
-      setTimeout(() => removeAlert(id), duration);
-    },
-    [removeAlert]
+function Radio({ checked, onChange, label }) {
+  return (
+    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+      <input
+        type="radio"
+        checked={checked}
+        onChange={onChange}
+        style={{ accentColor: ACCENT }}
+        className="w-[18px] h-[18px]"
+      />
+      <span className="text-[14px] text-gray-700">{label}</span>
+    </label>
   );
+}
 
-  const success = (message, title = "Success!") =>
-    showAlert({ type: "success", title, message });
-  const error = (message, title = "Error!") =>
-    showAlert({ type: "error", title, message });
-  const info = (message, title = "Info") =>
-    showAlert({ type: "info", title, message });
-  const warning = (message, title = "Warning!") =>
-    showAlert({ type: "warning", title, message });
-
-  return { alerts, removeAlert, success, error, info, warning };
-};
-
-// ==============================
-// MAIN COMPONENT
-// ==============================
 export default function VoiceCampaign() {
-  const alert = useAlert();
-
-  // MAIN STATES
-  const [numbers, setNumbers] = useState("");
+  // ---- core fields ----
+  const [creditType, setCreditType] = useState("trans");
+  const [callerId, setCallerId] = useState("");
+  const [callerIds, setCallerIds] = useState([]);
+  const [additionalCallerId, setAdditionalCallerId] = useState("");
+  const [campaignType, setCampaignType] = useState("obd");
   const [campaignName, setCampaignName] = useState(
     `${new Date().toLocaleDateString()}-${new Date().getHours()}:${new Date().getMinutes()}`
   );
-  const [callerId, setCallerId] = useState("");
   const [mediaFiles, setMediaFiles] = useState([]);
   const [selectedMediaId, setSelectedMediaId] = useState("");
-
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const [callType, setCallType] = useState("2");
-  const [voicePlan, setVoicePlan] = useState("2");
   const [retryAttempt, setRetryAttempt] = useState("0");
   const [retryDuration, setRetryDuration] = useState("0");
-
-  // POPUPS
-  const [showUploadPopup, setShowUploadPopup] = useState(false);
-  const [showGroupPopup, setShowGroupPopup] = useState(false);
-  const [showTestPopup, setShowTestPopup] = useState(false);
-  const [showSchedulePopup, setShowSchedulePopup] = useState(false);
-
-  // EXTRA STATES
-  const [testNumber, setTestNumber] = useState("");
-  const [uploadFile, setUploadFile] = useState(null);
-  const [fromRange, setFromRange] = useState(0);
-  const [toRange, setToRange] = useState(0);
+  const [scheduleMode, setScheduleMode] = useState("now"); // now | later | calendar
+  const [laterMinutes, setLaterMinutes] = useState("15");
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
-  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [expireTime, setExpireTime] = useState(defaultExpireTime());
 
-  // GROUPS (static demo)
-  const groups = [
-    { name: "Demo Group", total: 150 },
-    { name: "Customer Group", total: 350 },
-  ];
+  // ---- numbers (from uploaded file) ----
+  const [numbers, setNumbers] = useState([]);
+  const [uploadFileType, setUploadFileType] = useState("excel");
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const fileInputRef = useRef(null);
 
-  // ==============================
-  // LOAD MEDIA FILES FROM BACKEND
-  // ==============================
+  // ---- group panel ----
+  const [fromRange, setFromRange] = useState(0);
+  const [toRange, setToRange] = useState(0);
+  // const groups = [
+  //   { name: "Demo Group", total: 150 },
+  //   { name: "Customer Group", total: 350 },
+  // ];
+
+  // ---- sms panel ----
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [smsMessage, setSmsMessage] = useState("");
+
+  // ---- test call panel ----
+  const [testNumber, setTestNumber] = useState("");
+  const [testCallLoading, setTestCallLoading] = useState(false);
+
+  // ---- collapsibles ----
+  const [openPanels, setOpenPanels] = useState({ file: true, group: false, sms: false, test: true });
+  const togglePanel = (key) => setOpenPanels((p) => ({ ...p, [key]: !p[key] }));
+
+  // ---- run state ----
+  const [loading, setLoading] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  // ---- result popup ----
+  const [popup, setPopup] = useState(false);
+  const [popupType, setPopupType] = useState("success");
+  const [popupTitle, setPopupTitle] = useState("");
+  const [popupMsg, setPopupMsg] = useState("");
+  const [popupStats, setPopupStats] = useState(null);
+
+  const showPopup = (t, title, m, stats = null) => {
+    setPopupType(t);
+    setPopupTitle(title);
+    setPopupMsg(m);
+    setPopupStats(stats);
+    setPopup(true);
+  };
+
+  const userId = () => sessionStorage.getItem("user_id");
+
   useEffect(() => {
     loadMediaFiles();
+    loadCallerIds();
   }, []);
 
+  // ==============================
+  // LOAD MEDIA FILES / CALLER IDS
+  // ==============================
   const loadMediaFiles = async () => {
     try {
-      const userId = sessionStorage.getItem("user_id");
-      const res = await fetch(`${BASE}/get-media-files/?user_id=${userId}`);
+      const res = await fetch(`${BASE}/get-media-files/?user_id=${userId()}`);
       const data = await res.json();
       setMediaFiles(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -354,103 +142,15 @@ export default function VoiceCampaign() {
     }
   };
 
-  // ==============================
-  // AUDIO DROPZONE BOX
-  // ==============================
-  const UploadBox = ({ file, setFile }) => {
-    const { getRootProps, getInputProps } = useDropzone({
-      accept: { "audio/*": [".wav", ".mp3"] },
-      onDrop: (files) => setFile(files[0]),
-    });
-
-    return (
-      <div
-        {...getRootProps()}
-        className="relative border border-gray-300 rounded-xl bg-white h-[52px] px-4 flex items-center cursor-pointer hover:border-pink-400 duration-300 shadow-sm"
-      >
-        <input {...getInputProps()} />
-        <p className="text-[13px] text-gray-600 truncate w-full">
-          {file ? file.name : "Choose WAV File"}
-        </p>
-      </div>
-    );
-  };
-
-  // ==============================
-  // FILE UPLOAD HANDLER (CSV to numbers)
-  // ==============================
-  const handleFileUpload = () => {
-    if (!uploadFile) {
-      alert.warning("Please select a file first.", "No File Selected");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-      const nums = lines
-        .map((line) => line.split(",")[0].trim())
-        .filter((n) => /^[6-9]\d{9}$/.test(n));
-      if (nums.length > 0) {
-        setNumbers((prev) =>
-          prev ? prev + "," + nums.join(",") : nums.join(",")
-        );
-        alert.success(`${nums.length} numbers loaded successfully!`, "Upload Complete");
-        setShowUploadPopup(false);
-      } else {
-        alert.error("No valid numbers found in the file.", "Invalid File");
-      }
-    };
-    reader.readAsText(uploadFile);
-  };
-
-  // ==============================
-  // TEST CALL
-  // ==============================
-  const handleTestCall = async () => {
-    const cleanTestNumber = String(testNumber).replace(/\D/g, "");
-
-    if (!isValidIndianMobile(cleanTestNumber)) {
-      alert.warning(
-        "Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9.",
-        "Invalid Mobile Number"
-      );
-      return;
-    }
-
-    if (!selectedMediaId) {
-      alert.warning("Please select a voice file first.", "Voice File Missing");
-      return;
-    }
-
+  const loadCallerIds = async () => {
     try {
-      const userId = sessionStorage.getItem("user_id");
-      const res = await fetch(`${BASE}/send-bulk-voice/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          numbers: [cleanTestNumber],
-          media_file_id: selectedMediaId,
-          caller_id: callerId,
-          plan_id: voicePlan,
-          call_type: callType,
-          campaign_name: "Test Call",
-          retry_attempt: retryAttempt,
-          retry_duration: retryDuration,
-        }),
-      });
+      const res = await fetch(`${BASE}/get-caller-ids/?user_id=${userId()}`);
       const data = await res.json();
-      if (data.status === "done") {
-        alert.success("Test call sent successfully!", "Test Call Sent");
-      } else {
-        alert.error(data.message || "Something went wrong.", "Test Call Failed");
-      }
+      setCallerIds(Array.isArray(data) ? data : []);
     } catch (err) {
-      alert.error("Network error. Please try again.", "Network Error");
+      console.log("Caller ID load error:", err);
+      setCallerIds([]);
     }
-
-    setShowTestPopup(false);
   };
 
   // ==============================
@@ -458,10 +158,9 @@ export default function VoiceCampaign() {
   // ==============================
   const isValidIndianMobile = (value) => /^[6-9]\d{9}$/.test(String(value));
 
-  // Extract completed Indian mobile numbers from pasted/imported text.
   // Supports 10-digit numbers and +91 / 91 prefixed 12-digit numbers.
   const extractIndianNumbers = (raw) => {
-    const text = String(raw ?? "");
+    const text = Array.isArray(raw) ? raw.join(",") : String(raw ?? "");
     const tokens = text
       .replace(/[\r\n\t;|]+/g, ",")
       .split(/[\s,]+/)
@@ -477,7 +176,6 @@ export default function VoiceCampaign() {
         n = n.slice(2);
       }
 
-      // A token may contain multiple 10-digit numbers after cleaning.
       if (n.length > 10 && n.length % 10 === 0) {
         for (let i = 0; i < n.length; i += 10) {
           const part = n.slice(i, i + 10);
@@ -491,846 +189,681 @@ export default function VoiceCampaign() {
     return [...new Set(result)];
   };
 
-  const parseStoredNumbers = (raw) => {
-    const text = String(raw ?? "").replace(/\r/g, "");
-    const completed = [];
-    let current = "";
-
-    text.split("").forEach((ch) => {
-      if (/\d/.test(ch)) {
-        current += ch;
-        if (current.length === 10) {
-          if (isValidIndianMobile(current)) completed.push(current);
-          current = "";
-        }
-      } else if (ch === "," || /\s/.test(ch) || ch === ";" || ch === "|") {
-        if (current.length === 10 && isValidIndianMobile(current)) {
-          completed.push(current);
-        }
-        current = "";
-      }
-    });
-
-    if (current.length === 10 && isValidIndianMobile(current)) {
-      completed.push(current);
-      current = "";
-    }
-
-    return {
-      completed: [...new Set(completed)],
-      incomplete: current,
-    };
-  };
-
-  const buildNumbersText = (completed, incomplete = "") => {
-    const unique = [...new Set(completed.filter(isValidIndianMobile))];
-    if (!unique.length && !incomplete) return "";
-
-    let result = unique.join(",");
-    if (incomplete) {
-      result += `${result ? "," : ""}${incomplete}`;
-    }
-
-    // Automatically put comma after every completed number.
-    if (!incomplete && result) result += ",";
-    return result;
-  };
-
-  // Add ONE digit strictly at the end. Clicking anywhere else cannot change
-  // the position where the digit is inserted.
-  const appendDigitToNumbers = (digit) => {
-    if (!/^\d$/.test(digit)) return;
-
-    setNumbers((prev) => {
-      const parsed = parseStoredNumbers(prev);
-      let incomplete = parsed.incomplete;
-
-      // A new number must begin with 6/7/8/9.
-      if (!incomplete && !/[6-9]/.test(digit)) {
-        return buildNumbersText(parsed.completed, "");
-      }
-
-      if (incomplete.length >= 10) return buildNumbersText(parsed.completed, "");
-
-      incomplete += digit;
-
-      if (incomplete.length === 10) {
-        if (!isValidIndianMobile(incomplete)) {
-          // Invalid first digit / invalid number: don't add it.
-          return buildNumbersText(parsed.completed, "");
-        }
-
-        return buildNumbersText([...parsed.completed, incomplete], "");
-      }
-
-      return buildNumbersText(parsed.completed, incomplete);
-    });
-  };
-
-  const removeLastNumberCharacter = () => {
-    setNumbers((prev) => {
-      const parsed = parseStoredNumbers(prev);
-
-      if (parsed.incomplete) {
-        return buildNumbersText(parsed.completed, parsed.incomplete.slice(0, -1));
-      }
-
-      if (!parsed.completed.length) return "";
-
-      const completed = [...parsed.completed];
-      const last = completed.pop();
-      const remaining = last.slice(0, -1);
-
-      if (remaining) {
-        return buildNumbersText(completed, remaining);
-      }
-
-      return buildNumbersText(completed, "");
-    });
-  };
-
-  const moveNumbersCaretToEnd = (e) => {
-    const el = e.currentTarget;
-    requestAnimationFrame(() => {
-      const end = el.value.length;
-      try {
-        el.setSelectionRange(end, end);
-      } catch (_) {}
-    });
-  };
-
-  const handleNumbersKeyDown = (e) => {
-    const el = e.currentTarget;
-
-    // DIGITS: never let the browser insert at the clicked position.
-    if (/^\d$/.test(e.key)) {
-      e.preventDefault();
-      appendDigitToNumbers(e.key);
-      requestAnimationFrame(() => {
-        const end = el.value.length;
-        el.setSelectionRange(end, end);
-      });
-      return;
-    }
-
-    // BACKSPACE / DELETE: only remove from the very end.
-    if (e.key === "Backspace" || e.key === "Delete") {
-      e.preventDefault();
-      removeLastNumberCharacter();
-      requestAnimationFrame(() => {
-        const end = el.value.length;
-        el.setSelectionRange(end, end);
-      });
-      return;
-    }
-
-    // Comma/Enter only move the caret to the end. Commas are automatic.
-    if (e.key === "," || e.key === "Enter") {
-      e.preventDefault();
-      requestAnimationFrame(() => {
-        const end = el.value.length;
-        el.setSelectionRange(end, end);
-      });
-      return;
-    }
-
-    // Never allow navigation/editing inside the existing numbers.
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
-      e.preventDefault();
-      requestAnimationFrame(() => {
-        const end = el.value.length;
-        el.setSelectionRange(end, end);
-      });
-      return;
-    }
-
-    // Block letters and symbols.
-    if (e.key.length === 1) {
-      e.preventDefault();
-    }
-  };
-
-  const handleNumbersPaste = (e) => {
-    e.preventDefault();
-
-    const pasted = e.clipboardData?.getData("text") || "";
-    const pastedNumbers = extractIndianNumbers(pasted);
-    if (!pastedNumbers.length) return;
-
-    setNumbers((prev) => {
-      const existing = extractIndianNumbers(prev);
-      return buildNumbersText([...existing, ...pastedNumbers], "");
-    });
-
-    requestAnimationFrame(() => {
-      const el = e.currentTarget;
-      const end = el.value.length;
-      el.setSelectionRange(end, end);
-    });
-  };
-
-  const handleNumbersDrop = (e) => {
-    e.preventDefault();
-
-    const dropped = e.dataTransfer?.getData("text") || "";
-    const droppedNumbers = extractIndianNumbers(dropped);
-    if (!droppedNumbers.length) return;
-
-    setNumbers((prev) => {
-      const existing = extractIndianNumbers(prev);
-      return buildNumbersText([...existing, ...droppedNumbers], "");
-    });
-
-    requestAnimationFrame(() => {
-      const el = e.currentTarget;
-      const end = el.value.length;
-      el.setSelectionRange(end, end);
-    });
-  };
-
-  // If the browser tries to mutate the controlled textarea directly,
-  // immediately put the caret back at the end. Keyboard input itself is
-  // handled manually above, so existing numbers cannot be edited in-place.
-  const handleNumbersChange = (e) => {
-    const el = e.currentTarget;
-    e.preventDefault?.();
-    requestAnimationFrame(() => {
-      const end = el.value.length;
-      el.setSelectionRange(end, end);
-    });
-  };
-
   // ==============================
-  // SEND CAMPAIGN (immediate)
+  // FILE UPLOAD -> NUMBERS
   // ==============================
-  const sendCampaign = async () => {
-    if (loading) return;
-    setLoading(true);
-    setShowConfirm(false);
+  const acceptFor = (type) =>
+    type === "excel" ? ".xlsx,.xls" : type === "csv" ? ".csv" : ".txt";
 
-    const numberList = [
-      ...new Set(
-        numbers
-          .split(",")
-          .map((n) => n.trim())
-          .filter((n) => n !== "")
-      ),
-    ];
+  const handleChooseClick = () => fileInputRef.current?.click();
 
-    if (numberList.length === 0) {
-      alert.warning("Please enter at least one valid 10-digit Indian mobile number (starting with 6-9).", "Invalid Number");
-      setLoading(false);
-      return;
-    }
-
-    const invalidNumbers = numberList.filter((n) => !isValidIndianMobile(n));
-    if (invalidNumbers.length > 0) {
-      alert.error(
-        `Only valid 10-digit Indian mobile numbers are allowed. Invalid numbers: ${invalidNumbers.slice(0, 5).join(", ")}${invalidNumbers.length > 5 ? "..." : ""}`,
-        "Invalid Numbers"
-      );
-      setLoading(false);
-      return;
-    }
-
-    if (!selectedMediaId) {
-      alert.warning("Please select a voice file.", "Voice File Required");
-      setLoading(false);
-      return;
-    }
-    if (!callerId) {
-      alert.warning("Please enter a Caller ID.", "Caller ID Required");
-      setLoading(false);
-      return;
-    }
+  const handleFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadedFileName(file.name);
 
     try {
-      const userId = sessionStorage.getItem("user_id");
-      const res = await fetch(`${BASE}/send-bulk-voice/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          numbers: numberList,
-          media_file_id: selectedMediaId,
-          caller_id: callerId,
-          plan_id: voicePlan,
-          call_type: callType,
-          campaign_name: campaignName,
-          retry_attempt: retryAttempt,
-          retry_duration: retryDuration,
-        }),
-      });
-
-      const data = await res.json();
-
-      console.log("SEND RESPONSE =", data);
-
-      if (
-        data.status === "done" ||
-        data.status === "pending" ||
-        data.campaign_id
-      ) {
-        if (data.remaining_credit !== undefined) {
-          const user = JSON.parse(sessionStorage.getItem("user"));
-          sessionStorage.setItem(
-            "user",
-            JSON.stringify({ ...user, credit: data.remaining_credit })
-          );
-        }
-
-        if (data.status === "pending") {
-
-          alert.info(
-            `Campaign submitted successfully.
-
-Status: Pending`,
-            "Campaign Send ⏳"
-          );
-
-        } else {
-
-          alert.success(
-            `Campaign sent!
-
-            Total: ${data.total}
-            Sent: ${data.success}
-            Failed: ${data.failed}
-            Invalid: ${data.invalid}`,
-            "Campaign Sent 🚀"
-          );
-
-        }
-
-        setNumbers("");
-        setSelectedMediaId("");
-        setTimeout(() => window.location.reload(), 2000);
+      let rawValues = [];
+      if (uploadFileType === "excel" || /\.(xlsx|xls)$/i.test(file.name)) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        rawValues = rows.map((r) => r[0]).filter(Boolean);
       } else {
-        alert.error(data.message || "Something went wrong.", "Send Failed");
+        const text = await file.text();
+        rawValues = text
+          .split("\n")
+          .map((l) => l.split(",")[0])
+          .filter(Boolean);
+      }
+      const valid = extractIndianNumbers(rawValues);
+      if (valid.length === 0) {
+        showPopup("error", "Invalid File", "No valid numbers found in the file.");
+        return;
+      }
+      setNumbers(valid);
+      showPopup("success", "Upload Complete", `${valid.length} numbers loaded successfully!`);
+    } catch (err) {
+      showPopup("error", "Error", "Could not read this file. Please check the format and try again.");
+    }
+  };
+
+  const handleCancelFile = () => {
+    setUploadedFileName("");
+    setNumbers([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const downloadSampleFile = () => {
+    const csv = "Mobile Number\n9876543210\n9123456780\n";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sample-numbers.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ==============================
+  // PAYLOAD + RUN
+  // ==============================
+  const planId = () => (campaignType === "obd" ? "2" : "1");
+  const callTypeValue = () => (creditType === "trans" ? "2" : "1");
+
+  const basePayload = () => ({
+    user_id: userId(),
+    numbers,
+    media_file_id: selectedMediaId,
+    caller_id: callerId,
+    additional_caller_id: additionalCallerId || undefined,
+    plan_id: planId(),
+    call_type: callTypeValue(),
+    campaign_name: campaignName,
+    retry_attempt: retryAttempt,
+    retry_duration: retryDuration,
+    expire_at: expireTime,
+    sms_enabled: smsEnabled,
+    sms_message: smsEnabled ? smsMessage : undefined,
+  });
+
+  const validateBeforeRun = () => {
+    if (numbers.length === 0)
+      return "Please upload a file with valid 10-digit Indian mobile numbers (starting with 6-9).";
+    const invalidNumbers = numbers.filter((n) => !isValidIndianMobile(n));
+    if (invalidNumbers.length > 0)
+      return `Only valid 10-digit Indian mobile numbers are allowed. Invalid numbers: ${invalidNumbers
+        .slice(0, 5)
+        .join(", ")}${invalidNumbers.length > 5 ? "..." : ""}`;
+    if (!selectedMediaId) return "Please select a voice file.";
+    if (!callerId) return "Please enter a Caller ID.";
+    if (!campaignName.trim()) return "Please enter a Campaign Name";
+    if (scheduleMode === "calendar" && (!scheduleDate || !scheduleTime))
+      return "Please select both date and time.";
+    return null;
+  };
+
+  const handleRunClick = () => {
+    const err = validateBeforeRun();
+    if (err) {
+      showPopup("error", "Missing Information", err);
+      return;
+    }
+    if (scheduleMode === "now") {
+      setShowConfirm(true);
+    } else {
+      runCampaign();
+    }
+  };
+
+  const resetAfterSend = () => {
+    setNumbers([]);
+    setUploadedFileName("");
+    setSelectedMediaId("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const runCampaign = async () => {
+    if (loading) return;
+    setShowConfirm(false);
+    setLoading(true);
+    try {
+      if (scheduleMode === "now") {
+        const res = await fetch(`${BASE}/send-bulk-voice/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(basePayload()),
+        });
+        const data = await res.json();
+
+        console.log("SEND RESPONSE =", data);
+
+        if (data.status === "done" || data.status === "pending" || data.campaign_id) {
+          if (data.remaining_credit !== undefined) {
+            const user = JSON.parse(sessionStorage.getItem("user"));
+            sessionStorage.setItem(
+              "user",
+              JSON.stringify({ ...user, credit: data.remaining_credit })
+            );
+          }
+
+          if (data.status === "pending") {
+            showPopup(
+              "success",
+              "Campaign Send ⏳",
+              "Campaign submitted successfully.",
+              [
+                ["Total Numbers", data.total ?? numbers.length],
+                ["Status", "Pending"],
+              ]
+            );
+          } else {
+            showPopup(
+              "success",
+              "Campaign Sent 🚀",
+              "Your voice campaign has been dispatched successfully.",
+              [
+                ["Total", data.total],
+                ["Success", data.success],
+                ["Failed", data.failed],
+                ["Invalid", data.invalid],
+              ]
+            );
+          }
+
+          resetAfterSend();
+          setTimeout(() => window.location.reload(), 2000);
+        } else {
+          showPopup("error", "Send Failed", data.message || "Something went wrong.");
+        }
+      } else {
+        let scheduled_at;
+        if (scheduleMode === "later") {
+          scheduled_at = new Date(Date.now() + Number(laterMinutes) * 60000).toISOString();
+        } else {
+          scheduled_at = `${scheduleDate}T${scheduleTime}`;
+        }
+        const res = await fetch(`${BASE}/schedule-campaign/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...basePayload(), scheduled_at }),
+        });
+        const data = await res.json();
+        if (data.status === "scheduled") {
+          showPopup(
+            "success",
+            "Scheduled Successfully",
+            "Your campaign has been scheduled successfully.",
+            [
+              ["Total Numbers", data.total],
+              ["Scheduled At", scheduleMode === "calendar" ? `${scheduleDate} ${scheduleTime}` : `After ${laterMinutes} min`],
+            ]
+          );
+          resetAfterSend();
+        } else {
+          showPopup("error", "Schedule Failed", data.message || "Something went wrong.");
+        }
       }
     } catch (err) {
       console.log(err);
-      alert.error("Network error. Please try again.", "Network Error");
+      showPopup("error", "Network Error", "Network error. Please try again.");
     }
-
     setLoading(false);
   };
 
   // ==============================
-  // SCHEDULE CAMPAIGN
+  // TEST CALL
   // ==============================
-  const handleSchedule = async () => {
-    if (!scheduleDate || !scheduleTime) {
-      alert.warning("Please select both date and time.", "Date & Time Required");
-      return;
-    }
+  const handleTestCall = async () => {
+    const cleanTestNumber = String(testNumber).replace(/\D/g, "");
 
-    const numberList = [
-      ...new Set(
-        numbers
-          .split(",")
-          .map((n) => n.trim())
-          .filter((n) => n !== "")
-      ),
-    ];
-
-    if (numberList.length === 0) {
-      alert.warning("Please enter at least one valid 10-digit Indian mobile number (starting with 6-9).", "Invalid Number");
-      return;
-    }
-
-    const invalidNumbers = numberList.filter((n) => !isValidIndianMobile(n));
-    if (invalidNumbers.length > 0) {
-      alert.error(
-        `Only valid 10-digit Indian mobile numbers are allowed. Invalid numbers: ${invalidNumbers.slice(0, 5).join(", ")}${invalidNumbers.length > 5 ? "..." : ""}`,
-        "Invalid Numbers"
+    if (!isValidIndianMobile(cleanTestNumber)) {
+      showPopup(
+        "warning",
+        "Invalid Mobile Number",
+        "Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9."
       );
       return;
     }
 
     if (!selectedMediaId) {
-      alert.warning("Please select a voice file.", "Voice File Required");
-      return;
-    }
-    if (!callerId) {
-      alert.warning("Please enter a Caller ID.", "Caller ID Required");
+      showPopup("warning", "Voice File Missing", "Please select a voice file first.");
       return;
     }
 
+    setTestCallLoading(true);
     try {
-      setScheduleLoading(true);
-      const userId = sessionStorage.getItem("user_id");
-      const scheduledAt = `${scheduleDate}T${scheduleTime}`;
-
-      const res = await fetch(`${BASE}/schedule-campaign/`, {
+      const res = await fetch(`${BASE}/send-bulk-voice/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: userId,
-          numbers: numberList,
+          user_id: userId(),
+          numbers: [cleanTestNumber],
           media_file_id: selectedMediaId,
           caller_id: callerId,
-          plan_id: voicePlan,
-          call_type: callType,
-          campaign_name: campaignName,
-          scheduled_at: scheduledAt,
+          plan_id: planId(),
+          call_type: callTypeValue(),
+          campaign_name: "Test Call",
           retry_attempt: retryAttempt,
           retry_duration: retryDuration,
         }),
       });
-
       const data = await res.json();
-
-      if (data.status === "scheduled") {
-        alert.success(
-          `Campaign scheduled!\n\nTotal Numbers: ${data.total}\nScheduled At: ${scheduleDate} ${scheduleTime}`,
-          "Scheduled Successfully"
-        );
-        setNumbers("");
-        setSelectedMediaId("");
-        setShowSchedulePopup(false);
+      if (data.status === "done") {
+        showPopup("success", "Test Call Sent", "Test call sent successfully!");
+        setTestNumber("");
       } else {
-        alert.error(data.message || "Something went wrong.", "Schedule Failed");
+        showPopup("error", "Test Call Failed", data.message || "Something went wrong.");
       }
     } catch (err) {
-      console.log(err);
-      alert.error("Network error. Please try again.", "Network Error");
+      showPopup("error", "Network Error", "Network error. Please try again.");
     }
+    setTestCallLoading(false);
+  };
 
-    setScheduleLoading(false);
+  // ==============================
+  // CALLER ID OPTIONS (API, else from voice files)
+  // ==============================
+  const callerOptions =
+    callerIds.length > 0
+      ? callerIds.map((c) => ({ id: c.id, name: c.name, number: String(c.number) }))
+      : [
+          ...new Map(
+            mediaFiles
+              .filter((f) => f.caller_id)
+              .map((f) => [
+                String(f.caller_id),
+                { id: f.caller_id, name: "", number: String(f.caller_id) },
+              ])
+          ).values(),
+        ];
+
+  const inputClass =
+    "w-full h-[30px] border border-gray-400 rounded-sm px-2 text-[9px] outline-none focus:border-[#3F51B5] focus:ring-1 focus:ring-[#3F51B5]/20 bg-white";
+  const labelClass = "text-[12px] font-semibold text-gray-700 mb-1 block";
+
+  const popupIcon = () => {
+    if (popupType === "success") return <CheckCircle2 size={50} className="text-green-500" />;
+    if (popupType === "warning") return <AlertCircle size={50} className="text-amber-500" />;
+    return <AlertCircle size={50} className="text-red-500" />;
+  };
+  const popupBtn = () => {
+    if (popupType === "success") return "bg-green-500";
+    if (popupType === "warning") return "bg-amber-500";
+    return "bg-red-500";
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5] p-2">
+    <div className="min-h-screen bg-[#f4f5f8]">
+      <div className="max-w-[1800px]">
+        <h1 className="text-[16px] font-semibold text-gray-800">Create Campaign</h1>
+        <div className=" bg-gray-200 w-full my-2" />
 
-      {/* GLOBAL ALERT RENDERER */}
-      <AlertModal alerts={alert.alerts} removeAlert={alert.removeAlert} />
-
-      {/* MAIN CARD */}
-      <div className="bg-white rounded-[22px] border border-[#ef7d9f] overflow-hidden shadow-md">
-
-        {/* HEADER */}
-        <div className="px-7 py-5 border-b border-gray-200 bg-[#fafafa]">
-          <h1 className="text-[26px] font-bold text-gray-700 tracking-wide">
-            Compose Voice Call
-          </h1>
-        </div>
-
-        <div className="p-7">
-
-          {/* TOP GRID */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-7">
-
-            {/* CALL TYPE */}
-            <div>
-              <label className="text-[14px] text-gray-500 mb-2 block font-medium">Call Type</label>
-              <select
-                value={callType}
-                onChange={(e) => setCallType(e.target.value)}
-                className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-              >
-                <option value="2">Transactional</option>
-              </select>
-            </div>
-
-            {/* VOICE PLAN */}
-            <div>
-              <label className="text-[14px] text-gray-500 mb-2 block font-medium">Voice Plan</label>
-              <select
-                value={voicePlan}
-                onChange={(e) => setVoicePlan(e.target.value)}
-                className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-              >
-                <option value="1">Delivery Base 15</option>
-                <option value="2">Delivery Base 30</option>
-              </select>
-            </div>
-
-            {/* CALLER ID */}
-            <div>
-              <label className="text-[14px] text-gray-500 mb-2 block font-medium">CallerId</label>
-              <input
-                value={callerId}
-                onChange={(e) => setCallerId(e.target.value)}
-                placeholder="Leave empty"
-                className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-              />
-
-              {callerId && (
-                <div className="mt-3 bg-[#e95d96] h-[36px] rounded-lg flex items-center px-4 text-white font-semibold text-[13px] shadow">
-                  {callerId}
+        <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-2 items-start">
+          {/* LEFT: FORM */}
+          <div className="bg-white border border-gray-200 border-t-2 border-t-[#3F51B5] border-l-3 border-l-[#dfe0e4] border-r-3 border-r-[#dfe0e4] border-b-3 border-b-[#dfe0e4] rounded-lg p-4  ">
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-6 flex-wrap">
+                <span className={labelClass + " mb-0 w-fit"}>
+                  Credit Type<span className="text-red-500">*</span>
+                </span>
+                <div className="flex items-center gap-6">
+                  <Radio checked={creditType === "trans"} onChange={() => setCreditType("trans")} label="Trans" />
                 </div>
-              )}
-
-              {/* BUTTONS */}
-              <div className="flex flex-wrap gap-3 mt-5">
-                <button
-                  onClick={() => setShowUploadPopup(true)}
-                  className="bg-[#e95d96] hover:scale-105 duration-300 text-white px-5 h-[44px] rounded-xl flex items-center gap-2 text-[13px] shadow-lg"
-                >
-                  <FaUsers /> File
-                </button>
-                <button
-                  onClick={() => setShowGroupPopup(true)}
-                  className="bg-[#34c7f3] hover:scale-105 duration-300 text-white px-5 h-[44px] rounded-xl flex items-center gap-2 text-[13px] shadow-lg"
-                >
-                  <FaLayerGroup /> Group
-                </button>
-                <button
-                  onClick={() => setShowTestPopup(true)}
-                  className="bg-[#39d65d] hover:scale-105 duration-300 text-white px-5 h-[44px] rounded-xl flex items-center gap-2 text-[13px] shadow-lg"
-                >
-                  📞 Testing Call
-                </button>
               </div>
-            </div>
 
-            {/* CAMPAIGN NAME */}
-            <div>
-              <label className="text-[14px] text-gray-500 mb-2 block font-medium">Campaign Name</label>
-              <input
-                value={campaignName}
-                onChange={(e) => setCampaignName(e.target.value)}
-                className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-              />
-            </div>
-
-          </div>
-
-          {/* NUMBERS */}
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-[17px] text-gray-700 font-semibold">Numbers</h2>
-              <span className="text-gray-400 text-[13px]">
-                ({numbers
-                  ? [...new Set(numbers.split(",").map((n) => n.trim()).filter(Boolean))].length
-                  : 0})
-              </span>
-            </div>
-            <textarea
-              value={numbers}
-              onChange={handleNumbersChange}
-              onFocus={moveNumbersCaretToEnd}
-              onClick={moveNumbersCaretToEnd}
-              onKeyDown={handleNumbersKeyDown}
-              onPaste={handleNumbersPaste}
-              onDrop={handleNumbersDrop}
-              onDragOver={(e) => e.preventDefault()}
-              onSelect={moveNumbersCaretToEnd}
-              inputMode="numeric"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder="Enter 10-digit Indian mobile numbers"
-              className="w-full h-[240px] border border-gray-300 rounded-2xl p-5 outline-none resize-none focus:border-pink-400 text-[14px] shadow-sm"
-            />
-          </div>
-
-          {/* VOICE FILE SELECT */}
-          <div className="mt-8">
-            <label className="text-[14px] text-gray-500 mb-2 block font-medium">
-              Select Voice File
-              <span
-                onClick={loadMediaFiles}
-                className="ml-3 text-pink-500 cursor-pointer text-[12px] underline"
-              >
-                🔄 Refresh
-              </span>
-            </label>
-
-            {mediaFiles.length === 0 ? (
-              <div className="bg-yellow-50 border border-yellow-300 text-yellow-700 rounded-xl px-4 py-3 text-[13px]">
-                No voice files found. Please upload from <strong>Audio File</strong> section first.
+              <div>
+                <label className={labelClass}>
+                  Caller ID<span className="text-red-500">*</span>
+                </label>
+                {callerOptions.length === 0 ? (
+                  <div className="bg-blue-50 border border-blue-300 text-gray-700 rounded-lg px-2 py-2 text-[13px]">
+                    No Caller IDs found. Please add one from the Audio File section.
+                  </div>
+                ) : (
+                  <select value={callerId} onChange={(e) => setCallerId(e.target.value)} className={inputClass}>
+                    <option value="">Select Service Number</option>
+                    {callerOptions.map((c) => (
+                      <option key={c.id} value={c.number}>
+                        {c.name ? `${c.name} - ${c.number}` : c.number}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-            ) : (
-              <select
-                value={selectedMediaId}
-                onChange={(e) => {
-                  setSelectedMediaId(e.target.value);
-                  const selected = mediaFiles.find((x) => x.media_url === e.target.value);
-                  if (selected?.caller_id) setCallerId(selected.caller_id);
-                }}
-                className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-              >
-                <option value="">-- Select Voice File --</option>
-                {mediaFiles.map((f) => (
-                  <option key={f.id} value={f.media_url}>
-                    {f.name} | Caller ID: {f.caller_id}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
 
-          {/* RETRIES */}
-          <div className="mt-1">
-            <label className="text-[14px] text-gray-500 mb-2 block font-medium">Retries</label>
-            <select
-              value={retryAttempt}
-              onChange={(e) => setRetryAttempt(e.target.value)}
-              className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-            >
-              <option value="0">0</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-            </select>
-          </div>
-
-          {/* RETRY DURATION */}
-          <div className="mt-1">
-            <label className="text-[14px] text-gray-500 mb-2 block font-medium">Retry Duration</label>
-            <select
-              value={retryDuration}
-              onChange={(e) => setRetryDuration(e.target.value)}
-              className="w-full h-[54px] border border-gray-300 rounded-xl px-4 outline-none focus:border-pink-400 shadow-sm"
-            >
-              <option value="0">Immediate</option>
-              <option value="15">15 Min</option>
-              <option value="30">30 Min</option>
-              <option value="60">1 Hour</option>
-            </select>
-          </div>
-
-          {/* ACTION BUTTONS */}
-          <div className="flex flex-wrap gap-5 mt-10 items-center">
-            <button
-              onClick={() => setShowConfirm(true)}
-              disabled={loading}
-              className="bg-[#e95d96] hover:scale-105 duration-300 text-white px-9 h-[50px] rounded-xl flex items-center gap-3 shadow-lg font-semibold disabled:opacity-50"
-            >
-              <FaPaperPlane />
-              {loading ? "Sending..." : "Send Now"}
-            </button>
-            <span className="text-gray-500 text-[15px] font-medium">or</span>
-            <button
-              onClick={() => setShowSchedulePopup(true)}
-              className="bg-[#3d2d83] hover:scale-105 duration-300 text-white px-9 h-[50px] rounded-xl flex items-center gap-3 shadow-lg font-semibold"
-            >
-              <FaCalendarAlt /> Schedule Now
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ===== FILE UPLOAD POPUP ===== */}
-      {showUploadPopup && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white w-[520px] rounded-[18px] overflow-hidden shadow-2xl">
-            <div className="bg-[#e95d96] text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-[20px] font-semibold">Upload Numbers File</h2>
-              <button onClick={() => setShowUploadPopup(false)} className="text-[24px]">×</button>
-            </div>
-            <div className="p-6">
-              <div className="border border-gray-300 rounded-xl p-4">
+              <div>
+                <label className={labelClass}>Additional CallerID</label>
                 <input
-                  type="file"
-                  accept=".csv,.xls,.xlsx,.txt"
-                  onChange={(e) => setUploadFile(e.target.files[0])}
-                  className="mb-4"
+                  value={additionalCallerId}
+                  onChange={(e) => setAdditionalCallerId(e.target.value)}
+                  className={inputClass}
                 />
-                <p className="text-[13px] text-gray-500">
-                  Upload CSV / TXT file. Numbers should be in first column.
-                </p>
               </div>
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  onClick={() => setShowUploadPopup(false)}
-                  className="bg-[#ff5c5c] hover:bg-red-600 text-white px-6 h-[42px] rounded-lg font-medium"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={handleFileUpload}
-                  className="bg-[#35c2f2] hover:bg-cyan-600 text-white px-6 h-[42px] rounded-lg font-medium"
-                >
-                  Upload
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ===== GROUP POPUP ===== */}
-      {showGroupPopup && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white w-[650px] rounded-[18px] overflow-hidden shadow-2xl">
-            <div className="bg-[#35c2f2] text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-[20px] font-semibold">Upload Group</h2>
-              <button onClick={() => setShowGroupPopup(false)} className="text-[24px]">×</button>
+              <div>
+                <label className={labelClass}>
+                  Call Type<span className="text-red-500">*</span>
+                </label>
+                <select value={campaignType} onChange={(e) => setCampaignType(e.target.value)} className={inputClass}>
+                  <option value="obd">OBD Campaign</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>
+                  Name<span className="text-red-500">*</span>
+                </label>
+
+                <input
+                  value={campaignName}
+                  maxLength={30}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  placeholder="Max 30 Character"
+                  className={`${inputClass} !bg-[#ffe4c4] !text-gray-500 placeholder:!text-gray-500`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  Voice File
+                  <span
+                    onClick={loadMediaFiles}
+                    className="ml-3 text-[#3F51B5] cursor-pointer text-[11px] underline"
+                  >
+                    🔄 Refresh
+                  </span>
+                </label>
+                {mediaFiles.length === 0 ? (
+                  <div className="bg-blue-50 border border-blue-300 text-gray-700 rounded-lg px-4 py-2 text-[13px]">
+                    No voice files found. Please upload one from the Audio File section first.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedMediaId}
+                    onChange={(e) => {
+                      setSelectedMediaId(e.target.value);
+                      const selected = mediaFiles.find((x) => x.media_url === e.target.value);
+                      if (selected?.caller_id) setCallerId(String(selected.caller_id));
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">Select Voice File</option>
+                    {mediaFiles.map((f) => (
+                      <option key={f.id} value={f.media_url}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>Retries</label>
+                <select value={retryAttempt} onChange={(e) => setRetryAttempt(e.target.value)} className={inputClass}>
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Retry Duration</label>
+                <select value={retryDuration} onChange={(e) => setRetryDuration(e.target.value)} className={inputClass}>
+                  <option value="0">Immediate</option>
+                  <option value="15">15 Min</option>
+                  <option value="30">30 Min</option>
+                  <option value="60">1 Hour</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-8 flex-wrap">
+                  <span className={labelClass + " mb-0 w-fit"}>
+                    Schedule<span className="text-red-500">*</span>
+                  </span>
+                  <div className="flex items-center gap-6 flex-wrap">
+                    <Radio checked={scheduleMode === "now"} onChange={() => setScheduleMode("now")} label="Now" />
+                    <Radio checked={scheduleMode === "later"} onChange={() => setScheduleMode("later")} label="Later" />
+                    <Radio checked={scheduleMode === "calendar"} onChange={() => setScheduleMode("calendar")} label="Calendar" />
+                  </div>
+                </div>
+
+                {scheduleMode === "later" && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className="text-[13px] text-gray-500">Send after</span>
+                    <select
+                      value={laterMinutes}
+                      onChange={(e) => setLaterMinutes(e.target.value)}
+                      className="h-[38px] border border-gray-300 rounded-lg px-2 text-[13px]"
+                    >
+                      <option value="15">15 min</option>
+                      <option value="30">30 min</option>
+                      <option value="60">1 hour</option>
+                      <option value="120">2 hours</option>
+                    </select>
+                  </div>
+                )}
+
+                {scheduleMode === "calendar" && (
+                  <div className="flex items-center gap-3 mt-3">
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="h-[38px] border border-gray-300 rounded-lg px-2 text-[13px]"
+                    />
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="h-[38px] border border-gray-300 rounded-lg px-2 text-[13px]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>Campaign Expire Time</label>
+                <input value={expireTime} onChange={(e) => setExpireTime(e.target.value)} className={inputClass} />
+              </div>
             </div>
-            <div className="p-6">
-              <div className="flex gap-6 mb-6">
-                <div>
-                  <p className="text-[14px] text-gray-600 mb-2">From Range :</p>
+
+            <button
+              onClick={handleRunClick}
+              disabled={loading}
+              className="mt-4 bg-[#3F51B5] hover:bg-[#32408f] text-white font-semibold px-9 h-[40px] rounded-lg flex items-center gap-2 disabled:opacity-60"
+            >
+              {loading && <Loader2 size={16} className="animate-spin" />}
+              {loading ? "Running..." : "Run"}
+            </button>
+          </div>
+
+          {/* RIGHT: COLLAPSIBLE PANELS */}
+          <div className="space-y-4">
+            <Section title="File" isOpen={openPanels.file} onToggle={() => togglePanel("file")}>
+              <label className={labelClass}>
+                Upload Data<span className="text-red-500">*</span>
+              </label>
+              <select value={uploadFileType} onChange={(e) => setUploadFileType(e.target.value)} className={inputClass}>
+                <option value="excel">Excel File</option>
+                <option value="csv">CSV File</option>
+              </select>
+
+              <div className="flex justify-end mt-3">
+                <button
+                  type="button"
+                  onClick={downloadSampleFile}
+                  className="flex items-center gap-8 text-[13px] font-semibold text-gray-700"
+                >
+                  Download Sample File - <FileSpreadsheet size={39} className="text-green-600" />
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={acceptFor(uploadFileType)}
+                className="hidden"
+                onChange={handleFileSelected}
+              />
+
+              <div className="mt-4 bg-gradient-to-b from-gray-50 to-gray-100 border border-gray-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleChooseClick}
+                    className="bg-[#3F51B5] text-white px-4 h-[38px] rounded-lg flex items-center gap-1.5 text-[13px] font-semibold"
+                  >
+                    <Plus size={14} /> Choose
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelFile}
+                    className="bg-gray-200 text-gray-600 px-4 h-[38px] rounded-lg flex items-center gap-1.5 text-[13px] font-semibold"
+                  >
+                    <X size={14} /> Cancel
+                  </button>
+                </div>
+                {uploadedFileName && (
+                  <p className="text-[13px] text-gray-600 mt-3">
+                    📄 {uploadedFileName} — <span className="font-semibold text-gray-800">{numbers.length}</span> valid numbers
+                  </p>
+                )}
+              </div>
+            </Section>
+
+            {/* GROUP PANEL */}
+            {/* <Section title="Group" isOpen={openPanels.group} onToggle={() => togglePanel("group")}>
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1">
+                  <label className={labelClass}>From Range</label>
                   <input
                     type="number"
                     value={fromRange}
                     onChange={(e) => setFromRange(e.target.value)}
-                    className="w-[180px] h-[45px] border border-gray-300 rounded-lg px-3 outline-none"
+                    className={inputClass}
                   />
                 </div>
-                <div>
-                  <p className="text-[14px] text-gray-600 mb-2">To Range :</p>
+                <div className="flex-1">
+                  <label className={labelClass}>To Range</label>
                   <input
                     type="number"
                     value={toRange}
                     onChange={(e) => setToRange(e.target.value)}
-                    className="w-[180px] h-[45px] border border-gray-300 rounded-lg px-3 outline-none"
+                    className={inputClass}
                   />
                 </div>
               </div>
-              <div className="border border-gray-300 rounded-xl overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-[#f5f5f5]">
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead className="bg-gray-50">
                     <tr>
-                      <th className="text-left p-4 border-b">Group Name</th>
-                      <th className="text-left p-4 border-b">Total Contacts</th>
+                      <th className="text-left px-3 py-2 border-b">Group Name</th>
+                      <th className="text-left px-3 py-2 border-b">Total Contacts</th>
                     </tr>
                   </thead>
                   <tbody>
                     {groups.map((g, i) => (
                       <tr key={i} className="border-b hover:bg-gray-50 cursor-pointer">
-                        <td className="p-4">{g.name}</td>
-                        <td className="p-4">{g.total}</td>
+                        <td className="px-3 py-2">{g.name}</td>
+                        <td className="px-3 py-2">{g.total}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  onClick={() => setShowGroupPopup(false)}
-                  className="bg-[#ff5c5c] hover:bg-red-600 text-white px-6 h-[42px] rounded-lg font-medium"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => setShowGroupPopup(false)}
-                  className="bg-[#35c2f2] hover:bg-cyan-600 text-white px-6 h-[42px] rounded-lg font-medium"
-                >
-                  Select Group
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </Section> */}
 
-      {/* ===== TEST CALL POPUP ===== */}
-      {showTestPopup && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white w-[420px] rounded-[18px] overflow-hidden shadow-2xl">
-            <div className="bg-[#39d65d] text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-[20px] font-semibold">Testing Call</h2>
-              <button onClick={() => setShowTestPopup(false)} className="text-[24px]">×</button>
-            </div>
-            <div className="p-6">
-              <p className="text-[15px] text-gray-600 mb-3">Enter Mobile No. for test</p>
-              <input
-                type="number"
-                value={testNumber}
-                onChange={(e) => setTestNumber(e.target.value)}
-                className="w-full h-[48px] border border-gray-300 rounded-xl px-4 outline-none focus:border-green-400"
-              />
-              <div className="flex justify-end gap-3 mt-7">
+            <Section title="SMS" isOpen={openPanels.sms} onToggle={() => togglePanel("sms")}>
+              <label className="inline-flex items-center gap-2 mb-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={smsEnabled}
+                  onChange={(e) => setSmsEnabled(e.target.checked)}
+                  style={{ accentColor: ACCENT }}
+                  className="w-4 h-4"
+                />
+                <span className="text-[13px] text-gray-700 font-medium">Send SMS along with this campaign</span>
+              </label>
+              {smsEnabled && (
+                <>
+                  <textarea
+                    value={smsMessage}
+                    maxLength={160}
+                    onChange={(e) => setSmsMessage(e.target.value)}
+                    placeholder="Enter SMS message"
+                    className="w-full h-[90px] border border-gray-300 rounded-lg p-3 text-[13px] outline-none focus:border-[#3F51B5] resize-none"
+                  />
+                  <p className="text-[11px] text-gray-400 text-right mt-1">{smsMessage.length}/160</p>
+                </>
+              )}
+            </Section>
+
+            {/* TEST CALL */}
+            <Section title="Test Call" isOpen={openPanels.test} onToggle={() => togglePanel("test")}>
+              <div className="flex items-center gap-4">
+                <label className="text-[13px] font-semibold text-gray-700 whitespace-nowrap">
+                  Mobile No
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={testNumber}
+                  onChange={(e) => setTestNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  className="flex-1 h-[38px] border border-gray-300 rounded-md px-3 text-[13px] outline-none focus:border-[#3F51B5] focus:ring-1 focus:ring-[#3F51B5]/20 bg-gray-100"
+                />
                 <button
-                  onClick={() => setShowTestPopup(false)}
-                  className="bg-[#ff5c5c] hover:bg-red-600 text-white px-6 h-[42px] rounded-lg font-medium"
-                >
-                  Close
-                </button>
-                <button
+                  type="button"
                   onClick={handleTestCall}
-                  className="bg-[#39d65d] hover:bg-green-600 text-white px-6 h-[42px] rounded-lg font-medium"
+                  disabled={testCallLoading}
+                  className="bg-[#3F51B5] hover:bg-[#32408f] text-white font-semibold px-6 h-[38px] rounded-md flex items-center gap-2 text-[13px] disabled:opacity-60 whitespace-nowrap"
                 >
-                  Test Call
+                  {testCallLoading && <Loader2 size={14} className="animate-spin" />}
+                  {testCallLoading ? "Dialing..." : "Dial"}
                 </button>
               </div>
-            </div>
+            </Section>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* ===== SCHEDULE POPUP ===== */}
-      {showSchedulePopup && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white w-[500px] rounded-[22px] overflow-hidden shadow-2xl">
-            <div className="bg-[#3d2d83] text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-[22px] font-semibold">Schedule Campaign</h2>
-              <button onClick={() => setShowSchedulePopup(false)} className="text-[24px]">×</button>
-            </div>
-            <div className="p-7">
-              <div className="mb-6">
-                <label className="text-[15px] text-gray-600 mb-2 block font-medium">Select Date</label>
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="w-full h-[52px] border border-gray-300 rounded-xl px-4 outline-none focus:border-[#3d2d83]"
-                />
-              </div>
-              <div className="mb-6">
-                <label className="text-[15px] text-gray-600 mb-2 block font-medium">Select Time</label>
-                <input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  className="w-full h-[52px] border border-gray-300 rounded-xl px-4 outline-none focus:border-[#3d2d83]"
-                />
-              </div>
-              <div className="bg-[#f5f5f5] rounded-xl p-4 mb-7">
-                <p className="text-[14px] text-gray-700">Scheduled Date :</p>
-                <p className="text-[#3d2d83] font-semibold mt-1">{scheduleDate || "Not Selected"}</p>
-                <p className="text-[14px] text-gray-700 mt-3">Scheduled Time :</p>
-                <p className="text-[#3d2d83] font-semibold mt-1">{scheduleTime || "Not Selected"}</p>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowSchedulePopup(false)}
-                  className="bg-[#ff5c5c] hover:bg-red-600 text-white px-6 h-[44px] rounded-xl font-semibold"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={handleSchedule}
-                  disabled={scheduleLoading}
-                  className="bg-[#3d2d83] hover:bg-[#2c2063] disabled:opacity-50 text-white px-6 h-[44px] rounded-xl font-semibold"
-                >
-                  {scheduleLoading ? "Scheduling..." : "Schedule"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== CONFIRM POPUP ===== */}
+      {/* CONFIRM MODAL */}
       {showConfirm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-[24px] p-10 w-[390px] shadow-2xl text-center">
-            <h1 className="text-[32px] font-bold text-gray-700 mb-3">Confirm Send</h1>
-            <p className="text-gray-500 text-[15px] leading-7">
-              Are you sure you want to send this voice campaign?
-            </p>
-            <div className="flex justify-center gap-4 mt-8">
-              <button
-                onClick={sendCampaign}
-                className="bg-[#35c2f2] text-white px-8 h-[48px] rounded-xl font-semibold hover:scale-105 duration-300 shadow-lg"
-              >
-                Yes
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 w-[380px] shadow-2xl text-center">
+            <h2 className="text-[22px] font-bold text-gray-800 mb-2">Confirm Send</h2>
+            <p className="text-gray-500 text-[14px]">Are you sure you want to run this campaign now?</p>
+            <div className="mt-4 bg-gray-50 rounded-lg p-4 text-left space-y-1 text-[13px] text-gray-600">
+              <p>
+                Caller ID: <span className="font-semibold">{callerId || "—"}</span>
+              </p>
+              <p>
+                Numbers: <span className="font-semibold">{numbers.length}</span>
+              </p>
+              <p>
+                Name: <span className="font-semibold">{campaignName || "—"}</span>
+              </p>
+            </div>
+            <div className="flex justify-center gap-3 mt-6">
+              <button onClick={runCampaign} className="bg-[#3F51B5] text-white px-6 h-[42px] rounded-lg font-semibold">
+                Yes, Run
               </button>
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="bg-[#ff5c5c] text-white px-8 h-[48px] rounded-xl font-semibold hover:scale-105 duration-300 shadow-lg"
-              >
-                No
+              <button onClick={() => setShowConfirm(false)} className="bg-gray-200 text-gray-700 px-6 h-[42px] rounded-lg font-semibold">
+                Cancel
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* RESULT POPUP */}
+      {popup && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white w-full max-w-[360px] rounded-2xl p-6 text-center shadow-2xl">
+            <div className="flex justify-center mb-4">{popupIcon()}</div>
+            <h2 className="text-[20px] font-bold mb-1">{popupTitle}</h2>
+            <p className="text-[14px] text-gray-600">{popupMsg}</p>
+            {popupStats && (
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                {popupStats.map(([label, val]) => (
+                  <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                    <p className="text-[11px] text-gray-400">{label}</p>
+                    <p className="text-[16px] font-bold text-gray-700">{val}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setPopup(false)}
+              className={`mt-5 px-6 py-2 rounded-full text-white text-[14px] font-semibold ${popupBtn()}`}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
