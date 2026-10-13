@@ -1459,7 +1459,8 @@ def send_bulk_voice(request):
                 )
 
         return Response({
-            "status": campaign.status,
+            "status": "success",
+            "campaign_status": campaign.status,
             "campaign_id": campaign.id,
             "total": len(valid_numbers),
             "real_calls": real_call_count,
@@ -1468,13 +1469,9 @@ def send_bulk_voice(request):
             "processing_window_seconds": completion_seconds,
             "estimated_report": estimated_report,
             "message": (
-                "Campaign queued. Up to 500 real call requests are "
-                "being submitted. Remaining numbers will not be called. "
-                "Processing status will finish in 8–10 minutes."
+                "Your Campaign is Pending"
                 if is_large_campaign else
-                "Real Plivo call requests are being submitted for "
-                "all valid numbers (maximum 500)."
-            ),
+                "Call sent successfully. "            ),
             "remaining_credit": user.credit,
         }, status=202 if is_large_campaign else 200)
 
