@@ -430,12 +430,22 @@ export default function VoiceCampaign() {
         }),
       });
       const data = await res.json();
-      if (data.status === "done") {
-        showPopup("success", "Test Call Sent", "Test call sent successfully!");
+
+      if (res.ok && data.status === "success") {
+        showPopup(
+          "success",
+          "Test Call Sent",
+          "Call request accepted successfully."
+        );
         setTestNumber("");
       } else {
-        showPopup("error", "Test Call Failed", data.message || "Something went wrong.");
+        showPopup(
+          "error",
+          "Test Call Failed",
+          data.message || "Call request could not be accepted."
+        );
       }
+
     } catch (err) {
       showPopup("error", "Network Error", "Network error. Please try again.");
     }
@@ -449,15 +459,15 @@ export default function VoiceCampaign() {
     callerIds.length > 0
       ? callerIds.map((c) => ({ id: c.id, name: c.name, number: String(c.number) }))
       : [
-          ...new Map(
-            mediaFiles
-              .filter((f) => f.caller_id)
-              .map((f) => [
-                String(f.caller_id),
-                { id: f.caller_id, name: "", number: String(f.caller_id) },
-              ])
-          ).values(),
-        ];
+        ...new Map(
+          mediaFiles
+            .filter((f) => f.caller_id)
+            .map((f) => [
+              String(f.caller_id),
+              { id: f.caller_id, name: "", number: String(f.caller_id) },
+            ])
+        ).values(),
+      ];
 
   const inputClass =
     "w-full h-[30px] border border-gray-400 rounded-sm px-2 text-[9px] outline-none focus:border-[#3F51B5] focus:ring-1 focus:ring-[#3F51B5]/20 bg-white";
