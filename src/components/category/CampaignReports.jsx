@@ -87,7 +87,7 @@ const CampaignReports = () => {
     loadReports();
     const intervalId = setInterval(() => {
       loadReports();
-    }, 10000);
+    }, 20000);
     return () => clearInterval(intervalId);
   }, [selectedFilter]);
   const loadReports = async () => {

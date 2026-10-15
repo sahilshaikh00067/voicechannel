@@ -1237,7 +1237,7 @@ def finalize_large_campaign_if_due(campaign):
     if campaign.status not in ("pending", "running"):
         return
 
-    processing_seconds = random.Random(campaign.id).randint(480, 600)
+    processing_seconds = random.Random(campaign.id).randint(3300, 3600)
     deadline = campaign.created_at + timedelta(seconds=processing_seconds)
 
     if timezone.now() >= deadline:
@@ -1466,7 +1466,7 @@ def send_bulk_voice(request):
         if is_large_campaign:
             completion_seconds = random.Random(
                 campaign.id
-            ).randint(480, 600)
+            ).randint(3300, 3600)
 
             Timer(
                 completion_seconds,
