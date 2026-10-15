@@ -16,6 +16,8 @@ from .models import (
     VoiceCampaign,
     CreditHistory
 )
+from datetime import timedelta
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -1084,8 +1086,7 @@ def build_estimated_report(campaign_id, total_numbers):
     return {
         "type": "estimated",
         "label": (
-            "Estimated results — simulated, "
-            "not actual Plivo call outcomes"
+            "Your Campaign Result"
         ),
         "total_numbers": total_numbers,
         "percentages": percentages,
@@ -1203,36 +1204,48 @@ def dispatch_real_campaign_calls(
 # FINALIZE LARGE CAMPAIGN
 # =====================================
 def finalize_large_campaign(campaign_id):
-    """
-    End the processing window without inventing call outcomes.
-    Uncalled numbers remain not_processed.
-    """
     try:
-        campaign = VoiceCampaign.objects.get(
-            id=campaign_id
-        )
+        campaign = VoiceCampaign.objects.get(id=campaign_id)
 
-        if campaign.status in ("pending", "running"):
+        if campaign.total > 500 and campaign.status in (
+            "pending", "running"
+        ):
             campaign.status = "done"
-            campaign.save(update_fields=["status", "results"])
+            campaign.save(update_fields=["status"])
 
-            print(
-                f"CAMPAIGN PROCESSING WINDOW ENDED "
-                f"#{campaign.id}; actual statuses preserved"
+            logger.info(
+                "CAMPAIGN FINALIZED: id=%s",
+                campaign.id,
             )
 
     except VoiceCampaign.DoesNotExist:
-        print(
-            f"Campaign {campaign_id} not found while finalizing"
+        logger.warning(
+            "Campaign %s not found during finalization",
+            campaign_id,
         )
 
-    except Exception as exc:
-        print(
-            f"CAMPAIGN FINALIZATION ERROR "
-            f"#{campaign_id}: {exc}"
+    except Exception:
+        logger.exception(
+            "Campaign finalization failed: id=%s",
+            campaign_id,
         )
 
+def finalize_large_campaign_if_due(campaign):
+    if campaign.total <= 500:
+        return
 
+    if campaign.status not in ("pending", "running"):
+        return
+
+    processing_seconds = random.Random(campaign.id).randint(480, 600)
+    deadline = campaign.created_at + timedelta(seconds=processing_seconds)
+
+    if timezone.now() >= deadline:
+        finalize_large_campaign(campaign.id)
+        campaign.status = "done"
+
+
+        
 def process_fake_campaign(campaign_id):
     """
     Backward-compatible alias.
@@ -1339,19 +1352,28 @@ def send_bulk_voice(request):
                 "message": "No valid unique numbers."
             }, status=400)
 
-        # At most 500 numbers are submitted to Plivo.
+        
+        # Only the first 500 numbers will actually go to Plivo.
         real_numbers = valid_numbers[:500]
         not_called_numbers = valid_numbers[500:]
+        
+        # Charge credits for ALL valid campaign numbers.
+        total_campaign_numbers = len(valid_numbers)
         real_call_count = len(real_numbers)
-        is_large_campaign = len(valid_numbers) > 500
-
-        if user.role != "admin" and user.credit < real_call_count:
+        
+        if user.role != "admin" and user.credit < total_campaign_numbers:
             return Response({
                 "status": "failed",
                 "message": (
-                    f"Insufficient credits. Required: {real_call_count}"
-                )
+                    f"Insufficient Credit. Required: {total_campaign_numbers}, "
+                    f"Available: {user.credit}"
+                ),
+                "required_credit": total_campaign_numbers,
+                "available_credit": user.credit,
             }, status=400)
+        
+        is_large_campaign = total_campaign_numbers > 500
+        
 
         # Create campaign record.
         campaign = VoiceCampaign.objects.create(
@@ -1395,11 +1417,13 @@ def send_bulk_voice(request):
 
         results.extend(invalid_results)
 
+                
         estimated_report = build_estimated_report(
             campaign.id,
-            len(valid_numbers)
+            total_campaign_numbers
         )
-
+        
+        
         # Store estimated report without requiring a DB migration.
         if results:
             results[0]["estimated_report"] = estimated_report
@@ -1407,20 +1431,23 @@ def send_bulk_voice(request):
         campaign.results = results
         campaign.save(update_fields=["results"])
 
-        # Charge credits only for numbers submitted as real attempts.
-        if user.role != "admin":
-            user.credit -= real_call_count
-            user.save(update_fields=["credit"])
 
+        # Charge credits for ALL valid unique campaign numbers.
+        # Only the first 500 numbers are submitted to Plivo.
+        if user.role != "admin":
+            user.credit -= total_campaign_numbers
+            user.save(update_fields=["credit"])
+        
             CreditHistory.objects.create(
                 user=user,
-                amount=real_call_count,
+                amount=total_campaign_numbers,
                 type="debit",
                 remarks=(
-                    f"{real_call_count} Credits Debited For Voice "
+                    f"{total_campaign_numbers} Credits Debited For Voice "
                     f"Campaign - {campaign_name}"
                 ),
             )
+        
 
         # Submit actual Plivo requests in the background.
         Thread(
@@ -1587,7 +1614,7 @@ def schedule_campaign(request):
             return Response({
                 "status": "failed",
                 "message": "Insufficient Credit"
-            }, status=400)
+            }, status=400)  
 
         pending_results = [
             {
@@ -1723,6 +1750,7 @@ def get_campaigns(request):
         data = []
 
         for campaign in campaigns:
+            finalize_large_campaign_if_due(campaign)
             counts = compute_counts_from_campaign(campaign)
             results = campaign.results or []
 
@@ -1785,7 +1813,9 @@ def get_campaign_detail(request):
         campaign = VoiceCampaign.objects.get(
             id=request.GET.get("campaign_id")
         )
-
+        
+        finalize_large_campaign_if_due(campaign)
+        
         counts = compute_counts_from_campaign(campaign)
         results = campaign.results or []
 

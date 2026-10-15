@@ -11,7 +11,6 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-
 // ✅ Same classify function as backend & dashboard
 function classifyStatus(raw) {
   const s = String(raw || "").trim().toLowerCase();
@@ -22,7 +21,56 @@ function classifyStatus(raw) {
   if (s === "failed") return "failed";
   return "pending";
 }
-
+const getEstimatedReport = (total, campaignKey) => {
+  const count = Math.max(0, Number(total) || 0);
+  const hash = (text) => {
+    let value = 0;
+    for (let i = 0; i < text.length; i++) {
+      value = (value * 31 + text.charCodeAt(i)) >>> 0;
+    }
+    return value;
+  };
+  const ranges = [
+    { name: "Answered", min: 68, max: 72, color: "#4baaf5" },
+    { name: "No Answer", min: 15, max: 19, color: "#fccc55" },
+    { name: "Busy", min: 11, max: 14, color: "#ff8a00" },
+    { name: "Invalid / Other", min: 2, max: 4, color: "#f02424" },
+  ];
+  // Only combinations whose percentages total exactly 100 are allowed.
+  const candidates = [];
+  for (let answered = 68; answered <= 72; answered++) {
+    for (let noAnswer = 15; noAnswer <= 19; noAnswer++) {
+      for (let busy = 11; busy <= 14; busy++) {
+        for (let invalid = 2; invalid <= 4; invalid++) {
+          if (answered + noAnswer + busy + invalid === 100) {
+            candidates.push([answered, noAnswer, busy, invalid]);
+          }
+        }
+      }
+    }
+  }
+  const seed = hash(String(campaignKey || "campaign"));
+  const percentages = candidates[seed % candidates.length];
+  // Largest-remainder allocation ensures integer counts add up to total.
+  const exactCounts = percentages.map((percent) => (count * percent) / 100);
+  const estimatedCounts = exactCounts.map((value) => Math.floor(value));
+  let remaining =
+    count - estimatedCounts.reduce((sum, value) => sum + value, 0);
+  const remainderOrder = exactCounts
+    .map((value, index) => ({
+      index,
+      fraction: value - Math.floor(value),
+    }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (let i = 0; i < remaining; i++) {
+    estimatedCounts[remainderOrder[i].index]++;
+  }
+  return ranges.map((item, index) => ({
+    ...item,
+    percent: percentages[index],
+    estimatedCount: estimatedCounts[index],
+  }));
+};
 const CampaignReports = () => {
   const [selectedFilter, setSelectedFilter] = useState("Today");
   const [entries, setEntries] = useState([]);
@@ -30,31 +78,30 @@ const CampaignReports = () => {
   const [showEntries, setShowEntries] = useState(10);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-
   // Detail modal
   const [showDetail, setShowDetail] = useState(false);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-
   const filters = ["Today", "Yesterday", "Last 7 Days", "Last 30 Days", "This Month", "Last Month"];
-
-  useEffect(() => { loadReports(); }, [selectedFilter]);
-
+  useEffect(() => {
+    loadReports();
+    const intervalId = setInterval(() => {
+      loadReports();
+    }, 10000);
+    return () => clearInterval(intervalId);
+  }, [selectedFilter]);
   const loadReports = async () => {
     try {
       setLoading(true);
       const userId = sessionStorage.getItem("user_id");
       const res = await fetch(`${BASE}/get-campaigns/?user_id=${userId}`);
       const data = await res.json();
-
       if (!data || data.length === 0) {
         setEntries([]);
         setLoading(false);
         return;
       }
-
       const now = new Date();
-
       const filtered = data.filter((r) => {
         const d = new Date(r.created_at);
         if (selectedFilter === "Today")
@@ -77,7 +124,6 @@ const CampaignReports = () => {
         }
         return true;
       });
-
       const formatted = filtered.map((r, i) => {
         // ✅ FIX: API se jo values aaye wahi directly use karo
         // Backend already classify karke deta hai (views.py mein fix hai)
@@ -95,7 +141,6 @@ const CampaignReports = () => {
           callerId: r.caller_id || "",
         };
       });
-
       setEntries(formatted);
       setPage(1);
     } catch (err) {
@@ -104,7 +149,6 @@ const CampaignReports = () => {
     }
     setLoading(false);
   };
-
   const loadDetail = async (campaignId) => {
     try {
       setDetailLoading(true);
@@ -117,7 +161,6 @@ const CampaignReports = () => {
     }
     setDetailLoading(false);
   };
-
   // ==============================
   // EXCEL DOWNLOAD
   // ==============================
@@ -126,26 +169,21 @@ const CampaignReports = () => {
       alert("No data to download ❌");
       return;
     }
-
     const rows = detailData.results.map((r) => ({
       Number: r.number || "",
       Status: r.final_status || r.status || "",
     }));
-
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
     worksheet["!cols"] = [{ wch: 20 }, { wch: 20 }];
     XLSX.writeFile(workbook, `${detailData.name || "campaign"}_report.xlsx`);
   };
-
   const filteredEntries = entries.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
-
   const totalPages = Math.ceil(filteredEntries.length / showEntries) || 1;
   const paginated = filteredEntries.slice((page - 1) * showEntries, page * showEntries);
-
   // ✅ Detail modal mein bhi recompute from results as fallback
   const getDetailCounts = () => {
     if (!detailData) {
@@ -157,7 +195,6 @@ const CampaignReports = () => {
         invalid: 0,
       };
     }
-
     return {
       answered: Number(detailData.success || 0),
       busy: Number(detailData.busy || 0),
@@ -166,7 +203,6 @@ const CampaignReports = () => {
       invalid: Number(detailData.invalid || 0),
     };
   };
-
   return (
     <div className="min-h-screen bg-[#eef0f5] p-3 md:p-5">
       {/* TABS */}
@@ -175,7 +211,6 @@ const CampaignReports = () => {
           Reports
         </div>
       </div>
-
       {/* FILTER CARD */}
       <div className="bg-white rounded-b-lg rounded-tr-lg border border-[#e2e5ec] shadow-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#eee]">
@@ -185,7 +220,6 @@ const CampaignReports = () => {
             <span>Dashboard &gt; Voice &gt; Reports &gt; Campaign Report &gt; Version: v1.0</span>
           </div>
         </div>
-
         <div className="px-5 py-6 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-5">
           {/* LEFT COLUMN */}
           <div className="space-y-5">
@@ -209,13 +243,11 @@ const CampaignReports = () => {
           </div>
         </div>
       </div>
-
       {/* CAMPAIGN LIST CARD */}
       <div className="bg-white rounded-lg border border-[#e2e5ec] shadow-sm mt-4">
         <div className="px-5 py-4 border-b border-[#eee]">
           <h2 className="text-[14px] font-[600] text-black">Campaign List</h2>
         </div>
-
         <div className="px-5 pt-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 text-[13px] text-gray-600">
             <span>Show</span>
@@ -230,7 +262,6 @@ const CampaignReports = () => {
             </select>
             <span>entries</span>
           </div>
-
           <div className="flex items-center gap-3">
             <span className="text-[13px] text-gray-500">Search:</span>
             <div className="relative">
@@ -245,7 +276,6 @@ const CampaignReports = () => {
             </div>
           </div>
         </div>
-
         <div className="px-5 py-4 overflow-x-auto">
           <table className="w-full min-w-[900px]">
             <thead>
@@ -302,7 +332,6 @@ const CampaignReports = () => {
             </tbody>
           </table>
         </div>
-
         {/* FOOTER */}
         <div className="px-5 pb-5 flex items-center justify-between flex-wrap gap-3">
           <div className="text-[12.5px] text-gray-500">
@@ -314,12 +343,20 @@ const CampaignReports = () => {
               className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">«</button>
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
               className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">‹</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 4).map((p) => (
-              <button key={p} onClick={() => setPage(p)}
-                className={`w-[30px] h-[30px] rounded-md text-[12px] ${page === p ? "bg-[#3d4b94] text-white" : "border border-[#dcdfe6] text-gray-600"}`}>
-                {p}
-              </button>
-            ))}
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .slice(0, 4)
+              .map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-[30px] h-[30px] rounded-md text-[12px] ${page === p
+                      ? "bg-[#3d4b94] text-white"
+                      : "border border-[#dcdfe6] text-gray-600"
+                    }`}
+                >
+                  {p}
+                </button>
+              ))}
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
               className="w-[30px] h-[30px] rounded-md border border-[#dcdfe6] text-gray-600 disabled:opacity-40 text-[12px]">›</button>
             <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
@@ -327,7 +364,6 @@ const CampaignReports = () => {
           </div>
         </div>
       </div>
-
       {/* ==============================
           DETAIL MODAL
       ============================== */}
@@ -336,7 +372,6 @@ const CampaignReports = () => {
         return (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg w-full max-w-[950px] max-h-[90vh] overflow-y-auto shadow-xl border border-[#e2e5ec]">
-
               {/* MODAL HEADER */}
               <div className="flex justify-between items-center px-5 py-4 border-b border-[#eee] bg-white sticky top-0 z-10">
                 <div>
@@ -359,9 +394,7 @@ const CampaignReports = () => {
                   </button>
                 </div>
               </div>
-
               <div className="p-5">
-
                 {/* ANALYTICS */}
                 <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
                   <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
@@ -370,9 +403,7 @@ const CampaignReports = () => {
                       Total Calls : {detailData.total}
                     </div>
                   </div>
-
                   <div className="grid lg:grid-cols-2 gap-6 items-center">
-
                     {/* DONUT CHART */}
                     <div className="relative h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
@@ -405,16 +436,13 @@ const CampaignReports = () => {
                           <Tooltip />
                         </PieChart>
                       </ResponsiveContainer>
-
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
                         <h2 className="text-[32px] font-[800] text-gray-900">{detailData.total}</h2>
                         <p className="text-[12.5px] text-gray-500 font-medium">Total Calls</p>
                       </div>
                     </div>
-
                     {/* STATS CARDS */}
                     <div className="space-y-3">
-
                       {/* Answered */}
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
@@ -425,7 +453,6 @@ const CampaignReports = () => {
                           <div className="w-3 h-3 rounded-full bg-[#4baaf5]" />
                         </div>
                       </div>
-
                       {/* No Answer */}
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
@@ -436,7 +463,6 @@ const CampaignReports = () => {
                           <div className="w-3 h-3 rounded-full bg-[#fccc55]" />
                         </div>
                       </div>
-
                       {/* Busy */}
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
@@ -447,7 +473,6 @@ const CampaignReports = () => {
                           <div className="w-3 h-3 rounded-full bg-[#ff8a00]" />
                         </div>
                       </div>
-
                       {/* Invalid */}
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
@@ -458,11 +483,52 @@ const CampaignReports = () => {
                           <div className="w-3 h-3 rounded-full bg-red-500" />
                         </div>
                       </div>
-
                     </div>
                   </div>
                 </div>
-
+                {/* ESTIMATED REPORT */}
+                <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 className="text-[15px] font-bold text-gray-900">
+                      Estimated Report
+                    </h3>
+                    <span className="text-xs font-semibold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                      Simulated Estimate
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-5">
+                    Estimated results — simulated, not actual Plivo call outcomes.
+                  </p>
+                  <div className="space-y-4">
+                    {getEstimatedReport(
+                      detailData.total,
+                      detailData.id || detailData.job_id || detailData.name
+                    ).map((item) => (
+                      <div key={item.name}>
+                        <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+                          <span className="text-sm font-semibold text-gray-700">
+                            {item.name}
+                          </span>
+                          <span className="text-sm font-bold" style={{ color: item.color }}>
+                            {item.percent}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${item.percent}%`,
+                              backgroundColor: item.color,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          Estimated calls: {item.estimatedCount.toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 {/* DETAIL CARDS GRID */}
                 <div className="grid md:grid-cols-2 gap-3 mb-4">
                   {[
@@ -482,7 +548,6 @@ const CampaignReports = () => {
                     </div>
                   ))}
                 </div>
-
                 {/* RESULTS TABLE */}
                 {detailData.results && detailData.results.length > 0 && (
                   <div className="overflow-x-auto rounded-md border border-[#e2e5ec]">
@@ -508,7 +573,6 @@ const CampaignReports = () => {
                                     : (r.status === "invalid" || r.final_status === "invalid")
                                       ? "bg-amber-100 text-amber-700"
                                       : "bg-blue-100 text-blue-700"; // pending
-
                           return (
                             <tr key={i} className="border-b border-[#f1f1f1] hover:bg-[#fafbfc] duration-150">
                               <td className="px-4 py-3 text-[12.5px] font-[500]">{r.number}</td>
@@ -524,7 +588,6 @@ const CampaignReports = () => {
                     </table>
                   </div>
                 )}
-
               </div>
             </div>
           </div>
@@ -533,5 +596,4 @@ const CampaignReports = () => {
     </div>
   );
 };
-
 export default CampaignReports;
