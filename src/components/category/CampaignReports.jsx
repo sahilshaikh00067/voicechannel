@@ -125,7 +125,7 @@ const CampaignReports = () => {
         return true;
       });
       const formatted = filtered.map((r, i) => {
-        // ✅ FIX: API se jo values aaye wahi directly use karo
+        // ✅ FIX: API se jo val aaye wahi directly use karo
         // Backend already classify karke deta hai (views.py mein fix hai)
         return {
           id: r.id,
