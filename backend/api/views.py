@@ -292,6 +292,8 @@ def twilio_status(request):
                 or item.get("status")
                 or ""
             )
+            if item.get("real_call") is not True:
+                continue
 
             bucket = classify_status(raw_status)
 
@@ -1041,50 +1043,35 @@ Approval Required
 # Simulated figures, NOT real Plivo outcomes
 # =====================================
 
+
 def build_estimated_report(campaign_id, total_numbers):
-    rng = random.Random(int(campaign_id))
+    total = max(0, int(total_numbers or 0))
 
-    # Random percentages; each campaign gets stable figures.
-    while True:
-        answered_pct = rng.randint(68, 72)
-        no_answer_pct = rng.randint(15, 19)
-        busy_pct = rng.randint(5, 9)
-        failed_pct = rng.randint(2, 5)
-        invalid_pct = (
-            100 - answered_pct - no_answer_pct
-            - busy_pct - failed_pct
-        )
+    answered = round(total * 0.70)
+    no_answer = round(total * 0.17)
+    busy = round(total * 0.11)
 
-        if 1 <= invalid_pct <= 5:
-            break
+    # Remaining numbers go to Invalid / Other.
+    invalid = total - answered - no_answer - busy
+
+    counts = {
+        "answered": answered,
+        "no_answer": no_answer,
+        "busy": busy,
+        "invalid": invalid,
+    }
 
     percentages = {
-        "answered": answered_pct,
-        "no_answer": no_answer_pct,
-        "busy": busy_pct,
-        "failed": failed_pct,
-        "invalid": invalid_pct,
+        "answered": round(answered / total * 100, 2) if total else 0,
+        "no_answer": round(no_answer / total * 100, 2) if total else 0,
+        "busy": round(busy / total * 100, 2) if total else 0,
+        "invalid": round(invalid / total * 100, 2) if total else 0,
     }
-
-    exact = {
-        key: total_numbers * pct / 100
-        for key, pct in percentages.items()
-    }
-    counts = {key: int(value) for key, value in exact.items()}
-
-    remaining = total_numbers - sum(counts.values())
-    order = sorted(
-        exact,
-        key=lambda key: exact[key] - counts[key],
-        reverse=True,
-    )
-    for key in order[:remaining]:
-        counts[key] += 1
 
     return {
         "type": "estimated",
         "label": "Estimated Report — not actual Plivo results",
-        "total_numbers": total_numbers,
+        "total_numbers": total,
         "percentages": percentages,
         "counts": counts,
     }
@@ -1400,24 +1387,28 @@ def send_bulk_voice(request):
         ]
 
         results.extend([
-            {
-                "number": number,
-                "status": "answered",
-                "final_status": "answered",
-                "real_call": False,
-                "reason": (
-                    "Your Campaign Placed"
-                ),
-            }
-            for number in not_called_numbers
-        ])
+    {
+        "number": number,
+        "status": "not_called",
+        "final_status": "not_called",
+        "estimated_status": random.choices(
+            ["answered", "no_answer", "busy", "invalid"],
+            weights=[70, 17, 11, 2],
+            k=1,
+        )[0],
+        "real_call": False,
+        "reason": "Estimated status only - actual Plivo call not placed",
+    }
+    for number in not_called_numbers
+])
+
 
         results.extend(invalid_results)
 
                 
         estimated_report = build_estimated_report(
             campaign.id,
-            total_campaign_numbers
+            len(not_called_numbers)
         )
         
         
@@ -1688,6 +1679,9 @@ def compute_counts_from_campaign(campaign):
             invalid += 1
             continue
 
+        if item.get("real_call") is False:
+            continue
+
         if raw_status == "not_processed":
             continue
 
@@ -1781,7 +1775,7 @@ def get_campaigns(request):
                 ),
                 "not_called_count": sum(
                     1 for item in results
-                    if item.get("status") == "not_processed"
+                    if item.get("status") == "not_called"
                 ),
             })
 
@@ -1846,7 +1840,7 @@ def get_campaign_detail(request):
             ),
             "not_called_count": sum(
                 1 for item in results
-                if item.get("status") == "not_processed"
+                if item.get("status") == "not_called"
             ),
         })
 

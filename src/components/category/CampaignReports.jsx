@@ -229,14 +229,14 @@ const CampaignReports = () => {
 
           callerId: r.caller_id || "",
           estimated: Number(r.total || 0) > 500,
-estimatedCounts:
-  Number(r.total || 0) > 500
-    ? getEstimatedReport(
-        r.total,
-        r.id || r.job_id || r.name,
-        r.estimated_report
-      )
-    : null,
+          estimatedCounts:
+            Number(r.total || 0) > 500
+              ? getEstimatedReport(
+                r.total,
+                r.id || r.job_id || r.name,
+                r.estimated_report
+              )
+              : null,
         };
 
       });
@@ -299,24 +299,40 @@ estimatedCounts:
 
     }
 
-    const rows = detailData.results.map((r) => ({
 
-      Number: r.number || "",
+    const rows = detailData.results.map((r) => {
+      const status = String(
+        r.final_status || r.status || ""
+      ).trim().toLowerCase();
 
-      Status: r.final_status || r.status || "",
-      ReportType: Number(detailData.total || 0) > 500 ? "Actual per-number record; summary is estimated" : "Actual per-number status",
+      const notCalled =
+        r.real_call === false ||
+        status === "not called" ||
+        status === "not_called";
 
-    }));
+      return {
+        Number: r.number || "",
+        Status: notCalled
+          ? "Not Called"
+          : r.final_status || r.status || "",
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
-
     const workbook = XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
 
-    worksheet["!cols"] = [{ wch: 20 }, { wch: 20 }, { wch: 48 }];
+    worksheet["!cols"] = [
+      { wch: 20 },
+      { wch: 24 },
+    ];
 
-    XLSX.writeFile(workbook, `${detailData.name || "campaign"}_report.xlsx`);
+    XLSX.writeFile(
+      workbook,
+      `${detailData.name || "campaign"}_report.xlsx`
+    );
+
 
   };
 
@@ -343,13 +359,13 @@ estimatedCounts:
         detailData.estimated_report
       );
       const getCount = (name) => estimate.find((item) => item.name === name)?.estimatedCount || 0;
-      return {
-        answered: getCount("Answered"),
-        noAnswer: getCount("No Answer"),
-        busy: getCount("Busy"),
-        failed: getCount("Failed"),
-        invalid: getCount("Invalid"),
-      };
+return {
+  answered: getCount("Answered"),
+  noAnswer: getCount("No Answer"),
+  busy: getCount("Busy"),
+  failed: 0,
+  invalid: getCount("Invalid / Other"),
+};
     }
 
     return {
@@ -588,9 +604,11 @@ estimatedCounts:
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "No Answer")?.estimatedCount : item.noAnswer}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "Busy")?.estimatedCount : item.busy}</td>
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "Failed")?.estimatedCount : item.failed}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? 0 : item.failed}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "Invalid")?.estimatedCount : item.invalid}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated
+  ? item.estimatedCounts.find((x) => x.name === "Invalid / Other")?.estimatedCount ?? 0
+  : item.invalid}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1]">
 
@@ -752,7 +770,7 @@ estimatedCounts:
 
                   <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
 
-                    <div><div><h3 className="text-[14px] font-[600] text-black">Campaign Analytics</h3>{Number(detailData.total || 0) > 500 && <p className="text-xs text-amber-700 mt-1">Summary counts below are estimates, not actual Plivo outcomes.</p>}</div>{Number(detailData.total || 0) > 500 && <p className="text-xs text-amber-700 mt-1">Counts below are estimated, not actual Plivo outcomes.</p>}</div>
+                    <div><div><h3 className="text-[14px] font-[600] text-black">Campaign Analytics</h3>{Number(detailData.total || 0) > 500 && <p className="text-xs text-amber-700 mt-1"></p>}</div>{Number(detailData.total || 0) > 500 && <p className="text-xs text-amber-700 mt-1"></p>}</div>
 
                     <div className="border border-[#dcdfe6] bg-[#f7f8fa] text-[#3d4b94] px-4 py-1.5 rounded-md text-[12.5px] font-[600]">
 
@@ -968,67 +986,61 @@ estimatedCounts:
 
                   </div>
 
-                  <p className="text-xs text-gray-500 mb-5">
-
-                    Estimated results — simulated, not actual Plivo call outcomes.
-
-                  </p>
-
                   <div className="space-y-4">
 
-                    {getEstimatedReport(
+                    {
+                      getEstimatedReport(
+                        detailData.total,
+                        detailData.id || detailData.job_id || detailData.name,
+                        detailData.estimated_report
+                      ).map((item) => (
 
-                      detailData.total,
 
-                      detailData.id || detailData.job_id || detailData.name
+                        <div key={item.name}>
 
-                    ).map((item) => (
+                          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
 
-                      <div key={item.name}>
+                            <span className="text-sm font-semibold text-gray-700">
 
-                        <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+                              {item.name}
 
-                          <span className="text-sm font-semibold text-gray-700">
+                            </span>
 
-                            {item.name}
+                            <span className="text-sm font-bold" style={{ color: item.color }}>
 
-                          </span>
+                              {item.percent}%
 
-                          <span className="text-sm font-bold" style={{ color: item.color }}>
+                            </span>
 
-                            {item.percent}%
+                          </div>
 
-                          </span>
+                          <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+
+                            <div
+
+                              className="h-full rounded-full"
+
+                              style={{
+
+                                width: `${item.percent}%`,
+
+                                backgroundColor: item.color,
+
+                              }}
+
+                            />
+
+                          </div>
+
+                          <div className="mt-2 text-xs text-gray-500">
+
+                            Estimated calls: {item.estimatedCount.toLocaleString()}
+
+                          </div>
 
                         </div>
 
-                        <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-
-                          <div
-
-                            className="h-full rounded-full"
-
-                            style={{
-
-                              width: `${item.percent}%`,
-
-                              backgroundColor: item.color,
-
-                            }}
-
-                          />
-
-                        </div>
-
-                        <div className="mt-2 text-xs text-gray-500">
-
-                          Estimated calls: {item.estimatedCount.toLocaleString()}
-
-                        </div>
-
-                      </div>
-
-                    ))}
+                      ))}
 
                   </div>
 
