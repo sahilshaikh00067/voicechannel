@@ -723,7 +723,7 @@ export default function VoiceCampaign() {
               </div>
             </Section>
 
-            {/* GROUP PANEL */}
+            {/* GROUP PANELll */}
             {/* <Section title="Group" isOpen={openPanels.group} onToggle={() => togglePanel("group")}>
               <div className="flex gap-3 mb-4">
                 <div className="flex-1">
