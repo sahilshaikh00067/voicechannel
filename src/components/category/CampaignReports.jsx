@@ -287,10 +287,10 @@ const CampaignReports = () => {
           displayCounts: (() => {
             const estimate = Number(r.total || 0) > 500
               ? getEstimatedReport(
-                  r.total,
-                  r.id || r.job_id || r.name,
-                  r.estimated_report
-                )
+                r.total,
+                r.id || r.job_id || r.name,
+                r.estimated_report
+              )
               : [];
             const estimateCount = (label) =>
               estimate.find((item) => item.name === label)?.estimatedCount || 0;
@@ -364,35 +364,32 @@ const CampaignReports = () => {
 
     }
 
+
     const rows = detailData.results.map((r) => {
+      const rawStatus =
+        r.real_call === false
+          ? r.estimated_status
+          : r.final_status || r.status || "";
 
-      const status = String(
+      const normalized = String(rawStatus).trim().toLowerCase();
 
-        r.final_status || r.status || ""
-
-      ).trim().toLowerCase();
-
-      const notCalled =
-
-        r.real_call === false ||
-
-        status === "not called" ||
-
-        status === "not_called";
-
-      return {
-
-        Number: r.number || "",
-
-        Status: notCalled
-
-          ? "Not Called"
-
-          : r.final_status || r.status || "",
-
+      const statusMap = {
+        answered: "Answered",
+        completed: "Answered",
+        no_answer: "No Answer",
+        "no-answer": "No Answer",
+        noanswer: "No Answer",
+        busy: "Busy",
+        invalid: "Invalid",
+        failed: "Failed",
       };
 
+      return {
+        Number: r.number || "",
+        Status: statusMap[normalized] || "Pending",
+      };
     });
+
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
 
@@ -1202,8 +1199,12 @@ const CampaignReports = () => {
 
                         {detailData.results.slice(0, 100).map((r, i) => {
 
-                          const bucket = classifyStatus(r.final_status || r.status || "");
+                          const rawStatus =
+                            r.real_call === false
+                              ? r.estimated_status
+                              : r.final_status || r.status || "";
 
+                          const bucket = classifyStatus(rawStatus);
                           const badge =
 
                             bucket === "answered"
@@ -1238,7 +1239,14 @@ const CampaignReports = () => {
 
                                 <span className={`px-3 py-1 rounded-full text-[11px] font-bold ${badge}`}>
 
-                                  {r.final_status || r.status}
+                                  {({
+                                    answered: "Answered",
+                                    no_answer: "No Answer",
+                                    "no-answer": "No Answer",
+                                    busy: "Busy",
+                                    invalid: "Invalid",
+                                    failed: "Failed",
+                                  })[String(rawStatus || "").toLowerCase()] || rawStatus || "Pending"}
 
                                 </span>
 

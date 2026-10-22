@@ -1875,7 +1875,7 @@ def dispatch_real_campaign_calls(
 
             )
 
-            if campaign.total <= 500:
+            if campaign.total <= 100:
 
                 real_items = [
 
@@ -1931,7 +1931,7 @@ def finalize_large_campaign(campaign_id):
 
         campaign = VoiceCampaign.objects.get(id=campaign_id)
 
-        if campaign.total > 500 and campaign.status in (
+        if campaign.total > 100 and campaign.status in (
 
             "pending", "running"
 
@@ -1971,7 +1971,7 @@ def finalize_large_campaign(campaign_id):
 
 def finalize_large_campaign_if_due(campaign):
 
-    if campaign.total <= 500:
+    if campaign.total <= 100:
 
         return
 
