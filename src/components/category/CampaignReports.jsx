@@ -312,10 +312,10 @@ const CampaignReports = () => {
 
           callerId: r.caller_id || "",
 
-          estimated: Number(r.total || 0) > 100,
+          estimated: Number(r.total || 0) > 500,
 
           estimatedCounts:
-            Number(r.total || 0) > 100
+            Number(r.total || 0) > 500
               ? getEstimatedReport(
                 r.total,
                 r.id || r.job_id || r.name,
@@ -325,7 +325,7 @@ const CampaignReports = () => {
 
 
           displayCounts: (() => {
-            const isEstimated = Number(r.total || 0) > 100;
+            const isEstimated = Number(r.total || 0) > 500;
 
             const estimate = isEstimated
               ? getEstimatedReport(
@@ -434,7 +434,7 @@ const CampaignReports = () => {
       pending: "Pending",
     };
 
-    const isEstimated = Number(detailData.total || 0) > 100;
+    const isEstimated = Number(detailData.total || 0) > 500;
 
     const rows = detailData.results.map((r) => {
       const rawStatus = isEstimated
@@ -499,7 +499,7 @@ const CampaignReports = () => {
       };
     }
 
-    const isEstimated = Number(detailData.total || 0) > 100;
+    const isEstimated = Number(detailData.total || 0) > 500;
 
     if (isEstimated) {
       const estimate = getEstimatedReport(
@@ -520,7 +520,7 @@ const CampaignReports = () => {
       };
     }
 
-    // Up to 100 numbers: actual Plivo report.
+    // Up to 500 numbers: actual Plivo report.
     return {
       answered: Number(detailData.success || 0),
       busy: Number(detailData.busy || 0),
@@ -892,7 +892,7 @@ const CampaignReports = () => {
                     }
                     title={
                       String(detailData.status || "").toLowerCase() !== "done"
-                        ? "Campaign complete hone ke baad download available hoga"
+                        ? "Waiting"
                         : "Download Excel"
                     }
                     className="flex items-center gap-2 bg-[#3d4b94] text-white px-5 h-[38px] rounded-md text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1067,7 +1067,7 @@ const CampaignReports = () => {
 
                 {/* ESTIMATED REPORT: only when campaign is done and total > 100 */}
                 {String(detailData.status || "").toLowerCase() === "done" &&
-                  Number(detailData.total || 0) > 100 && (
+                  Number(detailData.total || 0) > 500 && (
                     <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <h3 className="text-[15px] font-bold text-gray-900">
@@ -1166,7 +1166,7 @@ const CampaignReports = () => {
 
                       <tbody>
                         {detailData.results.map((r, i) => {
-                          const isEstimated = Number(detailData.total || 0) > 100;
+                          const isEstimated = Number(detailData.total || 0) > 500;
 
                           const rawStatus = isEstimated
                             ? r.estimated_status

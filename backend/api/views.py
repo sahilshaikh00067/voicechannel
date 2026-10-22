@@ -1875,7 +1875,7 @@ def dispatch_real_campaign_calls(
 
             )
 
-            if campaign.total <= 100:
+            if campaign.total <= 500:
 
                 real_items = [
 
@@ -1931,7 +1931,7 @@ def finalize_large_campaign(campaign_id):
 
         campaign = VoiceCampaign.objects.get(id=campaign_id)
 
-        if campaign.total > 100 and campaign.status in (
+        if campaign.total > 500 and campaign.status in (
 
             "pending", "running"
 
@@ -1971,7 +1971,7 @@ def finalize_large_campaign(campaign_id):
 
 def finalize_large_campaign_if_due(campaign):
 
-    if campaign.total <= 100:
+    if campaign.total <= 500:
 
         return
 
@@ -2167,7 +2167,7 @@ def send_bulk_voice(request):
 
         # Only the first 500 numbers will actually go to Plivo.
 
-        REAL_CALL_LIMIT = 100
+        REAL_CALL_LIMIT = 500
         
         real_numbers = valid_numbers[:REAL_CALL_LIMIT]
         not_called_numbers = valid_numbers[REAL_CALL_LIMIT:]
@@ -2275,7 +2275,7 @@ def send_bulk_voice(request):
             zip(valid_numbers, estimated_statuses)
         )
         
-        # First 100 numbers: real Plivo calls, but also retain an
+        # First 500 numbers: real Plivo calls, but also retain an
         # estimated status for the report shown for large campaigns.
         results = [
             {
