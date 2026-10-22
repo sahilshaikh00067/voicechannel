@@ -684,7 +684,7 @@ const CampaignReports = () => {
 
               <tr className="bg-[#f5f6f9]">
 
-                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Failed", "Invalid", "View"].map((h) => (
+                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Invalid", "View"].map((h) => (
 
                   <th key={h} className="px-3 py-3 text-left border-b border-[#eee]">
 
