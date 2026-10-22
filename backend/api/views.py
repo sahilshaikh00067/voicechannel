@@ -2253,45 +2253,65 @@ def send_bulk_voice(request):
         ]
 
         estimated_report = build_estimated_report(
-            campaign.id,
-            len(not_called_numbers)
-        )
+    campaign.id,
+    total_campaign_numbers
+)
 
+        # Generate estimated statuses for ALL campaign numbers.
         estimated_counts = estimated_report["counts"]
+        
         estimated_statuses = (
             ["answered"] * estimated_counts["answered"]
             + ["no_answer"] * estimated_counts["no_answer"]
             + ["busy"] * estimated_counts["busy"]
             + ["invalid"] * estimated_counts["invalid"]
         )
+        
+        # Keep the estimates stable for this campaign.
         random.Random(str(campaign.id)).shuffle(estimated_statuses)
-
+        
+        # Map each number to its estimated status.
+        estimated_by_number = dict(
+            zip(valid_numbers, estimated_statuses)
+        )
+        
+        # First 100 numbers: real Plivo calls, but also retain an
+        # estimated status for the report shown for large campaigns.
+        results = [
+            {
+                "number": number,
+                "status": "pending",
+                "final_status": "pending",
+                "estimated_status": estimated_by_number[number],
+                "real_call": True,
+                "job_id": "",
+                "retry_count": 0,
+            }
+            for number in real_numbers
+        ]
+        
+        # Remaining numbers: no actual Plivo calls; estimated statuses only.
         results.extend([
             {
                 "number": number,
                 "status": "not_called",
                 "final_status": "not_called",
-                "estimated_status": estimated_status,
+                "estimated_status": estimated_by_number[number],
                 "real_call": False,
                 "reason": "Estimated status only - actual Plivo call not placed",
             }
-            for number, estimated_status in zip(
-                not_called_numbers, estimated_statuses
-            )
+            for number in not_called_numbers
         ])
-
+        
         results.extend(invalid_results)
-
-        # Store estimated report without requiring a DB migration.
-
+        
+        # Save the campaign-wide estimated report.
         if results:
-
             results[0]["estimated_report"] = estimated_report
-
+        
         campaign.results = results
-
         campaign.save(update_fields=["results"])
-
+        
         # Charge credits for ALL valid unique campaign numbers.
 
         # Only the first 500 numbers are submitted to Plivo.
@@ -2780,6 +2800,34 @@ def compute_counts_from_campaign(campaign):
 
     }
 
+
+
+
+def get_safe_campaign_results(campaign):
+    results = campaign.results or []
+
+    # Completion se pehle koi final/estimated status expose mat karo.
+    if str(campaign.status).lower() == "done":
+        return results
+
+    safe_results = []
+
+    for item in results:
+        safe_item = dict(item)
+        safe_item["status"] = "pending"
+        safe_item["final_status"] = "pending"
+
+        # Estimated result completion se pehle hide rahe.
+        safe_item.pop("estimated_status", None)
+        safe_item.pop("estimated_report", None)
+
+        safe_results.append(safe_item)
+
+    return safe_results
+
+
+
+
 # =====================================
 
 # GET CAMPAIGNS
@@ -2826,9 +2874,20 @@ def get_campaigns(request):
 
             finalize_large_campaign_if_due(campaign)
 
-            counts = compute_counts_from_campaign(campaign)
 
-            results = campaign.results or []
+            counts = compute_counts_from_campaign(campaign)
+            
+            if str(campaign.status).lower() != "done":
+                counts = {
+                    "answered": 0,
+                    "failed": 0,
+                    "invalid": 0,
+                    "no_answer": 0,
+                    "busy": 0,
+                }
+            
+            results = get_safe_campaign_results(campaign)
+            
 
             data.append({
 
@@ -2876,7 +2935,11 @@ def get_campaigns(request):
 
                 "results": results,
 
-                "estimated_report": get_estimated_report(campaign),
+                "estimated_report": (
+    get_estimated_report(campaign)
+    if str(campaign.status).lower() == "done"
+    else None
+),
 
                 "real_call_count": sum(
 
@@ -2940,9 +3003,20 @@ def get_campaign_detail(request):
 
         finalize_large_campaign_if_due(campaign)
 
+        
         counts = compute_counts_from_campaign(campaign)
-
-        results = campaign.results or []
+        
+        if str(campaign.status).lower() != "done":
+            counts = {
+                "answered": 0,
+                "failed": 0,
+                "invalid": 0,
+                "no_answer": 0,
+                "busy": 0,
+            }
+        
+        results = get_safe_campaign_results(campaign)
+        
 
         return Response({
 
@@ -2990,7 +3064,11 @@ def get_campaign_detail(request):
 
             "results": results,
 
-            "estimated_report": get_estimated_report(campaign),
+            "estimated_report": (
+    get_estimated_report(campaign)
+    if str(campaign.status).lower() == "done"
+    else None
+),
 
             "real_call_count": sum(
 
