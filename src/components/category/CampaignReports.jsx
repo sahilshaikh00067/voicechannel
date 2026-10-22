@@ -298,8 +298,6 @@ const CampaignReports = () => {
 
           answered: Number(r.success || 0),
 
-          failed: Number(r.failed || 0),
-
           noAnswer: Number(r.no_answer || 0),
 
           busy: Number(r.busy || 0),
@@ -350,7 +348,6 @@ const CampaignReports = () => {
                 answered: Number(r.success || 0),
                 noAnswer: Number(r.no_answer || 0),
                 busy: Number(r.busy || 0),
-                failed: Number(r.failed || 0),
                 invalid: Number(r.invalid || 0),
               };
           })(),
@@ -429,7 +426,7 @@ const CampaignReports = () => {
       noanswer: "No Answer",
       busy: "Busy",
       invalid: "Invalid",
-      failed: "Failed",
+      failed: "Other",
       not_called: "Pending",
       pending: "Pending",
     };
@@ -483,7 +480,6 @@ const CampaignReports = () => {
         answered: 0,
         busy: 0,
         noAnswer: 0,
-        failed: 0,
         invalid: 0,
       };
     }
@@ -525,7 +521,6 @@ const CampaignReports = () => {
       answered: Number(detailData.success || 0),
       busy: Number(detailData.busy || 0),
       noAnswer: Number(detailData.no_answer || 0),
-      failed: Number(detailData.failed || 0),
       invalid: Number(detailData.invalid || 0),
     };
   };
@@ -684,8 +679,7 @@ const CampaignReports = () => {
 
               <tr className="bg-[#f5f6f9]">
 
-                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Failed", "Invalid", "View"].map((h) => (
-
+                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Invalid", "View"].map((h) => (
                   <th key={h} className="px-3 py-3 text-left border-b border-[#eee]">
 
                     <div className="flex items-center gap-1 text-[12px] font-[700] text-gray-700 whitespace-nowrap">
@@ -708,7 +702,7 @@ const CampaignReports = () => {
 
               {loading ? (
 
-                <tr><td colSpan="11" className="text-center py-10 text-[13px] text-gray-500">Loading...</td></tr>
+                <tr><td colSpan="10" className="text-center py-10 text-[13px] text-gray-500">Loading...</td></tr>
 
               ) : paginated.length === 0 ? (
 
@@ -757,8 +751,6 @@ const CampaignReports = () => {
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.noAnswer : item.noAnswer}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.busy : item.busy}</td>
-
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.failed : item.failed}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.invalid : item.invalid}</td>
 
@@ -1126,7 +1118,6 @@ const CampaignReports = () => {
                     ["Answered", counts.answered],
                     ["No Answer", counts.noAnswer],
                     ["Busy", counts.busy],
-                    ["Failed", counts.failed],
                     ["Invalid", counts.invalid],
                     ["Caller ID", detailData.caller_id || "-"],
                     ["Job ID", detailData.job_id || "-"],
@@ -1185,8 +1176,6 @@ const CampaignReports = () => {
                                 ? "bg-orange-100 text-orange-700"
                                 : bucket === "no_answer"
                                   ? "bg-yellow-100 text-yellow-700"
-                                  : bucket === "failed"
-                                    ? "bg-red-100 text-red-600"
                                     : bucket === "invalid"
                                       ? "bg-amber-100 text-amber-700"
                                       : "bg-blue-100 text-blue-700";
@@ -1205,7 +1194,7 @@ const CampaignReports = () => {
                             invalid: "Invalid",
                             invalid_number: "Invalid",
                             "invalid-number": "Invalid",
-                            failed: "Failed",
+                            failed: "Other",
                             pending: "Pending",
                             not_called: "Pending",
                           };
