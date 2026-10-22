@@ -45,50 +45,87 @@ function classifyStatus(raw) {
 }
 
 const getEstimatedReport = (total, campaignKey, backendReport = null) => {
+
   const count = Math.max(0, Number(total) || 0);
 
   const colors = {
+
     answered: "#4baaf5",
+
     no_answer: "#fccc55",
+
     busy: "#ff8a00",
+
     invalid: "#f02424",
+
   };
 
   // Prefer the saved backend estimate
+
   const savedCounts = backendReport?.counts;
+
   const savedPercentages = backendReport?.percentages;
 
   if (savedCounts && savedPercentages) {
+
     return [
+
       {
+
         name: "Answered",
+
         percent: savedPercentages.answered,
+
         estimatedCount: savedCounts.answered || 0,
+
         color: colors.answered,
+
       },
+
       {
+
         name: "No Answer",
+
         percent: savedPercentages.no_answer,
+
         estimatedCount: savedCounts.no_answer || 0,
+
         color: colors.no_answer,
+
       },
+
       {
+
         name: "Busy",
+
         percent: savedPercentages.busy,
+
         estimatedCount: savedCounts.busy || 0,
+
         color: colors.busy,
+
       },
+
       {
+
         name: "Invalid / Other",
+
         percent: savedPercentages.invalid,
+
         estimatedCount: savedCounts.invalid || 0,
+
         color: colors.invalid,
+
       },
+
     ];
+
   }
 
   // No backend estimate available: don't fabricate a report.
+
   return [];
+
 };
 
 const CampaignReports = () => {
@@ -123,7 +160,7 @@ const CampaignReports = () => {
 
       loadReports();
 
-    }, 20000);
+    }, 180000);
 
     return () => clearInterval(intervalId);
 
@@ -228,15 +265,45 @@ const CampaignReports = () => {
           status: r.status || "",
 
           callerId: r.caller_id || "",
+
           estimated: Number(r.total || 0) > 500,
+
           estimatedCounts:
+
             Number(r.total || 0) > 500
+
               ? getEstimatedReport(
+
                 r.total,
+
                 r.id || r.job_id || r.name,
+
                 r.estimated_report
+
               )
+
               : null,
+
+          displayCounts: (() => {
+            const estimate = Number(r.total || 0) > 500
+              ? getEstimatedReport(
+                  r.total,
+                  r.id || r.job_id || r.name,
+                  r.estimated_report
+                )
+              : [];
+            const estimateCount = (label) =>
+              estimate.find((item) => item.name === label)?.estimatedCount || 0;
+
+            return {
+              answered: Number(r.success || 0) + estimateCount("Answered"),
+              noAnswer: Number(r.no_answer || 0) + estimateCount("No Answer"),
+              busy: Number(r.busy || 0) + estimateCount("Busy"),
+              failed: Number(r.failed || 0),
+              invalid: Number(r.invalid || 0) + estimateCount("Invalid / Other"),
+            };
+          })(),
+
         };
 
       });
@@ -256,8 +323,6 @@ const CampaignReports = () => {
     setLoading(false);
 
   };
-
-
 
   const loadDetail = async (campaignId) => {
 
@@ -299,40 +364,57 @@ const CampaignReports = () => {
 
     }
 
-
     const rows = detailData.results.map((r) => {
+
       const status = String(
+
         r.final_status || r.status || ""
+
       ).trim().toLowerCase();
 
       const notCalled =
+
         r.real_call === false ||
+
         status === "not called" ||
+
         status === "not_called";
 
       return {
+
         Number: r.number || "",
+
         Status: notCalled
+
           ? "Not Called"
+
           : r.final_status || r.status || "",
+
       };
+
     });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
+
     const workbook = XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
 
     worksheet["!cols"] = [
+
       { wch: 20 },
+
       { wch: 24 },
+
     ];
 
     XLSX.writeFile(
-      workbook,
-      `${detailData.name || "campaign"}_report.xlsx`
-    );
 
+      workbook,
+
+      `${detailData.name || "campaign"}_report.xlsx`
+
+    );
 
   };
 
@@ -349,32 +431,39 @@ const CampaignReports = () => {
   // ✅ Detail modal mein bhi recompute from results as fallback
 
   const getDetailCounts = () => {
-    if (!detailData) return { answered: 0, busy: 0, noAnswer: 0, failed: 0, invalid: 0 };
-
-    // More than 500: show a clearly labelled estimated summary, not fake per-call statuses.
-    if (Number(detailData.total || 0) > 500) {
-      const estimate = getEstimatedReport(
-        detailData.total,
-        detailData.id || detailData.job_id || detailData.name,
-        detailData.estimated_report
-      );
-      const getCount = (name) => estimate.find((item) => item.name === name)?.estimatedCount || 0;
-return {
-  answered: getCount("Answered"),
-  noAnswer: getCount("No Answer"),
-  busy: getCount("Busy"),
-  failed: 0,
-  invalid: getCount("Invalid / Other"),
-};
+    if (!detailData) {
+      return { answered: 0, busy: 0, noAnswer: 0, failed: 0, invalid: 0 };
     }
 
-    return {
+    const actual = {
       answered: Number(detailData.success || 0),
       busy: Number(detailData.busy || 0),
       noAnswer: Number(detailData.no_answer || 0),
       failed: Number(detailData.failed || 0),
       invalid: Number(detailData.invalid || 0),
     };
+
+    // For campaigns above 500, combine the real first-500 Plivo outcomes
+    // with estimates for numbers that were not sent to Plivo.
+    if (Number(detailData.total || 0) > 500) {
+      const estimate = getEstimatedReport(
+        detailData.total,
+        detailData.id || detailData.job_id || detailData.name,
+        detailData.estimated_report
+      );
+      const getCount = (name) =>
+        estimate.find((item) => item.name === name)?.estimatedCount || 0;
+
+      return {
+        answered: actual.answered + getCount("Answered"),
+        noAnswer: actual.noAnswer + getCount("No Answer"),
+        busy: actual.busy + getCount("Busy"),
+        failed: actual.failed,
+        invalid: actual.invalid + getCount("Invalid / Other"),
+      };
+    }
+
+    return actual;
   };
 
   return (
@@ -531,7 +620,7 @@ return {
 
               <tr className="bg-[#f5f6f9]">
 
-                {["Date", "Name", "Status", "Caller ID", "Total", "Answered*", "No Answer*", "Busy*", "Failed*", "Invalid*", "View"].map((h) => (
+                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Failed", "Invalid", "View"].map((h) => (
 
                   <th key={h} className="px-3 py-3 text-left border-b border-[#eee]">
 
@@ -599,16 +688,15 @@ return {
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.totalCount}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "Answered")?.estimatedCount : item.answered}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.answered : item.answered}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "No Answer")?.estimatedCount : item.noAnswer}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.noAnswer : item.noAnswer}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.estimatedCounts.find((x) => x.name === "Busy")?.estimatedCount : item.busy}</td>
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? 0 : item.failed}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.busy : item.busy}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated
-  ? item.estimatedCounts.find((x) => x.name === "Invalid / Other")?.estimatedCount ?? 0
-  : item.invalid}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.failed : item.failed}</td>
+
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.invalid : item.invalid}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1]">
 
@@ -989,12 +1077,16 @@ return {
                   <div className="space-y-4">
 
                     {
-                      getEstimatedReport(
-                        detailData.total,
-                        detailData.id || detailData.job_id || detailData.name,
-                        detailData.estimated_report
-                      ).map((item) => (
 
+                      getEstimatedReport(
+
+                        detailData.total,
+
+                        detailData.id || detailData.job_id || detailData.name,
+
+                        detailData.estimated_report
+
+                      ).map((item) => (
 
                         <div key={item.name}>
 
