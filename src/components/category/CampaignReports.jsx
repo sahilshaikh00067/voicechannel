@@ -1034,7 +1034,7 @@ const CampaignReports = () => {
                         </div>
                       </div>
 
-                      <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+                      {/* <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="text-[#e85d75] text-[12.5px] font-[600]">
@@ -1046,7 +1046,7 @@ const CampaignReports = () => {
                           </div>
                           <div className="w-3 h-3 rounded-full bg-[#e85d75]" />
                         </div>
-                      </div>
+                      </div> */}
 
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
                         <div className="flex justify-between items-center">
