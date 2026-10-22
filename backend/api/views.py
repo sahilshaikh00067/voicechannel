@@ -2167,17 +2167,18 @@ def send_bulk_voice(request):
 
         # Only the first 500 numbers will actually go to Plivo.
 
-        real_numbers = valid_numbers[:500]
-
-        not_called_numbers = valid_numbers[500:]
-
+        REAL_CALL_LIMIT = 100
+        
+        real_numbers = valid_numbers[:REAL_CALL_LIMIT]
+        not_called_numbers = valid_numbers[REAL_CALL_LIMIT:]
+        
         # Charge credits for ALL valid campaign numbers.
 
         total_campaign_numbers = len(valid_numbers)
 
         real_call_count = len(real_numbers)
 
-        is_large_campaign = total_campaign_numbers > 500
+        is_large_campaign = total_campaign_numbers > REAL_CALL_LIMIT
 
         if user.role != "admin" and user.credit < total_campaign_numbers:
 
@@ -2199,7 +2200,7 @@ def send_bulk_voice(request):
 
             }, status=400)
 
-        is_large_campaign = total_campaign_numbers > 500
+        is_large_campaign = total_campaign_numbers > REAL_CALL_LIMIT
 
         # Create campaign record.
 
