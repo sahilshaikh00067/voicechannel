@@ -1071,11 +1071,11 @@ const CampaignReports = () => {
                     <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <h3 className="text-[15px] font-bold text-gray-900">
-                          Estimated Report
+                          Report
                         </h3>
 
                         <span className="text-xs font-semibold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                          Simulated Estimate
+                          Percentage
                         </span>
                       </div>
 
@@ -1110,7 +1110,7 @@ const CampaignReports = () => {
                             </div>
 
                             <div className="mt-2 text-xs text-gray-500">
-                              Estimated calls: {item.estimatedCount.toLocaleString()}
+                              Calls: {item.estimatedCount.toLocaleString()}
                             </div>
                           </div>
                         ))}
