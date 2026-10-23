@@ -1989,6 +1989,64 @@ def finalize_large_campaign_if_due(campaign):
 
         campaign.status = "done"
 
+
+
+def finalize_stuck_small_campaign_if_due(campaign):
+    """
+    Recover small campaigns stuck because Plivo callbacks were missed.
+    Unresolved calls are marked failed with an explicit timeout reason.
+    """
+    if campaign.total > 500:
+        return
+
+    if str(campaign.status).lower() not in ("pending", "running"):
+        return
+
+    if not campaign.created_at:
+        return
+
+    # Allow sufficient time for actual calls and callbacks.
+    deadline = campaign.created_at + timedelta(minutes=20)
+
+    if timezone.now() < deadline:
+        return
+
+    results = campaign.results or []
+    changed = False
+
+    for item in results:
+        if item.get("real_call") is not True:
+            continue
+
+        current = str(
+            item.get("final_status") or item.get("status") or ""
+        ).strip().lower()
+
+        if current in ("", "pending"):
+            item["status"] = "failed"
+            item["final_status"] = "failed"
+            item["error"] = (
+                "Callback timeout: final call status could not be confirmed"
+            )
+            changed = True
+
+    if changed or str(campaign.status).lower() in ("pending", "running"):
+        campaign.results = results
+
+        campaign.failed = sum(
+            1 for item in results
+            if item.get("real_call") is True
+            and str(
+                item.get("final_status") or item.get("status") or ""
+            ).strip().lower() == "failed"
+        )
+
+        campaign.status = "done"
+        campaign.save(update_fields=["results", "failed", "status"])
+
+
+
+
 def process_fake_campaign(campaign_id):
 
     """
@@ -2873,7 +2931,7 @@ def get_campaigns(request):
         for campaign in campaigns:
 
             finalize_large_campaign_if_due(campaign)
-
+            finalize_stuck_small_campaign_if_due(campaign)
 
             counts = compute_counts_from_campaign(campaign)
             
@@ -3002,6 +3060,7 @@ def get_campaign_detail(request):
         )
 
         finalize_large_campaign_if_due(campaign)
+        finalize_stuck_small_campaign_if_due(campaign)
 
         
         counts = compute_counts_from_campaign(campaign)
