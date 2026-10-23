@@ -2861,28 +2861,72 @@ def compute_counts_from_campaign(campaign):
 
 
 
+
 def get_safe_campaign_results(campaign):
-    results = campaign.results or []
+    results = [
+        dict(item)
+        for item in (campaign.results or [])
+    ]
 
-    # Completion se pehle koi final/estimated status expose mat karo.
-    if str(campaign.status).lower() == "done":
-        return results
+    if str(campaign.status).lower() != "done":
+        safe_results = []
 
-    safe_results = []
+        for item in results:
+            item["status"] = "pending"
+            item["final_status"] = "pending"
+            item.pop("estimated_status", None)
+            item.pop("estimated_report", None)
+            safe_results.append(item)
 
-    for item in results:
-        safe_item = dict(item)
-        safe_item["status"] = "pending"
-        safe_item["final_status"] = "pending"
+        return safe_results
 
-        # Estimated result completion se pehle hide rahe.
-        safe_item.pop("estimated_status", None)
-        safe_item.pop("estimated_report", None)
+    # Repair estimated statuses for completed large campaigns.
+    if campaign.total > 500:
+        report = get_estimated_report(campaign)
 
-        safe_results.append(safe_item)
+        if not report:
+            report = build_estimated_report(
+                campaign.id,
+                campaign.total,
+            )
 
-    return safe_results
+        counts = report.get("counts", {})
 
+        estimated_statuses = (
+            ["answered"] * counts.get("answered", 0)
+            + ["no_answer"] * counts.get("no_answer", 0)
+            + ["busy"] * counts.get("busy", 0)
+            + ["invalid"] * counts.get("invalid", 0)
+        )
+
+        random.Random(str(campaign.id)).shuffle(
+            estimated_statuses
+        )
+
+        valid_items = [
+            item for item in results
+            if (
+                item.get("real_call") is True
+                or item.get("status") == "not_called"
+            )
+        ]
+
+        # Never assign missing estimates as Pending silently.
+        if len(estimated_statuses) == len(valid_items):
+            for item, estimated_status in zip(
+                valid_items, estimated_statuses
+            ):
+                item["estimated_status"] = estimated_status
+
+        # Preserve invalid-input records as invalid.
+        for item in results:
+            if (
+                item.get("status") == "invalid"
+                or item.get("final_status") == "invalid"
+            ):
+                item["estimated_status"] = "invalid"
+
+    return results
 
 
 
