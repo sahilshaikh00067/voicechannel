@@ -315,7 +315,7 @@ const CampaignReports = () => {
 
       loadReports();
 
-    }, 5000);
+    }, 180000);
 
     return () => clearInterval(intervalId);
 
