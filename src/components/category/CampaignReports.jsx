@@ -27,74 +27,122 @@ import {
 // ✅ Same classify function as backend & dashboard
 
 function classifyStatus(raw) {
+
   const s = String(raw || "").trim().toLowerCase();
 
   // Answered calls
+
   if (
+
     s === "completed" ||
+
     s === "answered" ||
+
     s === "answer" ||
+
     s === "normal_clearing"
+
   ) {
+
     return "answered";
+
   }
 
   // Busy calls
+
   if (s === "busy" || s === "user_busy") {
+
     return "busy";
+
   }
 
   // No answer / rejected calls
+
   if (
+
     [
+
       "no-answer",
+
       "no_answer",
+
       "noanswer",
+
       "no answer",
+
       "rejected",
+
       "cancelled",
+
       "canceled",
+
       "timeout",
+
       "no_user_response",
+
       "subscriber_absent",
+
       "call_rejected",
+
     ].includes(s)
+
   ) {
+
     return "no_answer";
+
   }
 
   // Failed calls
+
   if (
+
     [
+
       "failed",
+
       "unallocated_number",
+
       "normal_unspecified",
+
       "error",
+
     ].includes(s)
+
   ) {
+
     return "failed";
+
   }
 
   // Invalid numbers
+
   if (
+
     [
+
       "invalid",
+
       "invalid_number",
+
       "invalid-number",
+
     ].includes(s)
+
   ) {
+
     return "invalid";
+
   }
 
   // Unknown or unfinished status
+
   return "pending";
+
 }
 
 const getEstimatedReport = (total, campaignKey, backendReport = null) => {
 
-  const count = Math.max(0, Number(total) || 0);
-
-  const colors = {
+    const colors = {
 
     answered: "#4baaf5",
 
@@ -102,7 +150,7 @@ const getEstimatedReport = (total, campaignKey, backendReport = null) => {
 
     busy: "#ff8a00",
 
-    invalid: "#f02424",
+    failed: "#f02424",
 
   };
 
@@ -154,13 +202,13 @@ const getEstimatedReport = (total, campaignKey, backendReport = null) => {
 
       {
 
-        name: "Invalid / Other",
+        name: "Failed",
 
         percent: savedPercentages.invalid,
 
         estimatedCount: savedCounts.invalid || 0,
 
-        color: colors.invalid,
+        color: colors.failed,
 
       },
 
@@ -206,7 +254,7 @@ const CampaignReports = () => {
 
       loadReports();
 
-    }, 180000);
+    }, 5000);
 
     return () => clearInterval(intervalId);
 
@@ -220,11 +268,15 @@ const CampaignReports = () => {
 
       const userId = sessionStorage.getItem("user_id");
 
-      const res = await fetch(`${BASE}/get-campaigns/?user_id=${userId}`);
+      if (!userId) {
+        setEntries([]);
+        return;
+      }
 
+      const res = await fetch(`${BASE}/get-campaigns/?user_id=${encodeURIComponent(userId)}`);
+      if (!res.ok) throw new Error(`Reports API failed: ${res.status}`);
       const data = await res.json();
-
-      if (!data || data.length === 0) {
+      if (!Array.isArray(data) || data.length === 0) {
 
         setEntries([]);
 
@@ -302,7 +354,7 @@ const CampaignReports = () => {
 
           busy: Number(r.busy || 0),
 
-          invalid: Number(r.invalid || 0),
+          failed: Number(r.invalid ?? r.failed ?? 0),
 
           jobId: r.job_id || "",
 
@@ -313,43 +365,69 @@ const CampaignReports = () => {
           estimated: Number(r.total || 0) > 500,
 
           estimatedCounts:
+
             Number(r.total || 0) > 500
+
               ? getEstimatedReport(
+
                 r.total,
+
                 r.id || r.job_id || r.name,
+
                 r.estimated_report
+
               )
+
               : null,
 
-
           displayCounts: (() => {
+
             const isEstimated = Number(r.total || 0) > 500;
 
             const estimate = isEstimated
+
               ? getEstimatedReport(
+
                 r.total,
+
                 r.id || r.job_id || r.name,
+
                 r.estimated_report
+
               )
+
               : [];
 
             const estimateCount = (label) =>
+
               estimate.find((item) => item.name === label)?.estimatedCount || 0;
 
             return isEstimated
+
               ? {
+
                 answered: estimateCount("Answered"),
+
                 noAnswer: estimateCount("No Answer"),
+
                 busy: estimateCount("Busy"),
-                failed: 0,
-                invalid: estimateCount("Invalid / Other"),
+
+                failed: estimateCount("Failed"),
+
               }
+
               : {
+
                 answered: Number(r.success || 0),
+
                 noAnswer: Number(r.no_answer || 0),
+
                 busy: Number(r.busy || 0),
-                invalid: Number(r.invalid || 0),
+
+                failed: Number(r.invalid ?? r.failed ?? 0),
+
               };
+
           })(),
 
         };
@@ -378,10 +456,10 @@ const CampaignReports = () => {
 
       setDetailLoading(true);
 
-      const res = await fetch(`${BASE}/get-campaign-detail/?campaign_id=${campaignId}`);
-
+      const res = await fetch(`${BASE}/get-campaign-detail/?campaign_id=${encodeURIComponent(campaignId)}`);
+      if (!res.ok) throw new Error(`Campaign detail API failed: ${res.status}`);
       const data = await res.json();
-
+      if (!data || typeof data !== "object") throw new Error("Invalid campaign detail response");
       setDetailData(data);
 
       setShowDetail(true);
@@ -403,63 +481,103 @@ const CampaignReports = () => {
   // ==============================
 
   const downloadExcel = () => {
+
     if (String(detailData?.status || "").toLowerCase() !== "done") {
+
       alert("Campaign abhi pending hai. Complete hone ke baad hi download kar sakte hain.");
+
       return;
+
     }
 
     if (
+
       !detailData ||
+
       !detailData.results ||
+
       detailData.results.length === 0
+
     ) {
+
       alert("No data to download ❌");
+
       return;
+
     }
 
     const statusMap = {
+
       answered: "Answered",
+
       completed: "Answered",
+
       normal_clearing: "Answered",
+
       no_answer: "No Answer",
+
       "no-answer": "No Answer",
+
       noanswer: "No Answer",
+
       busy: "Busy",
-      invalid: "Invalid",
-      failed: "Other",
+
+      invalid: "Failed",
+
+      invalid_number: "Failed",
+
+      "invalid-number": "Failed",
+
+      failed: "Failed",
+
       not_called: "Pending",
+
       pending: "Pending",
+
     };
 
     const isEstimated = Number(detailData.total || 0) > 500;
 
     const rows = detailData.results.map((r) => {
+
       const rawStatus = isEstimated
+
         ? r.estimated_status
+
         : r.final_status || r.status || "";
 
       const normalized = String(rawStatus).trim().toLowerCase();
 
       return {
+
         Number: r.number || "",
+
         Status: statusMap[normalized] || "Pending",
+
       };
+
     });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
+
     const workbook = XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
 
     worksheet["!cols"] = [
+
       { wch: 20 },
+
       { wch: 24 },
+
     ];
 
     const fileName = `${String(detailData.name || "campaign")
-      .replace(/[\\/:*?"<>|]/g, "_")}_report.xlsx`;
+
+      .replace(/[\\\\/:*?"<>|]/g, "_")}_report.xlsx`;
 
     XLSX.writeFile(workbook, fileName);
+
   };
 
   const filteredEntries = entries.filter((item) =>
@@ -475,54 +593,87 @@ const CampaignReports = () => {
   // ✅ Detail modal mein bhi recompute from results as fallback
 
   const getDetailCounts = () => {
+
     if (!detailData) {
+
       return {
+
         answered: 0,
+
         busy: 0,
+
         noAnswer: 0,
-        invalid: 0,
+
+        failed: 0,
+
       };
+
     }
 
     // Pending campaign: do not show partial results.
+
     if (String(detailData.status || "").toLowerCase() !== "done") {
+
       return {
+
         answered: 0,
+
         busy: 0,
+
         noAnswer: 0,
+
         failed: 0,
-        invalid: 0,
+
       };
+
     }
 
     const isEstimated = Number(detailData.total || 0) > 500;
 
     if (isEstimated) {
+
       const estimate = getEstimatedReport(
+
         detailData.total,
+
         detailData.id || detailData.job_id || detailData.name,
+
         detailData.estimated_report
+
       );
 
       const getCount = (name) =>
+
         estimate.find((item) => item.name === name)?.estimatedCount || 0;
 
       return {
+
         answered: getCount("Answered"),
+
         noAnswer: getCount("No Answer"),
+
         busy: getCount("Busy"),
-        failed: 0,
-        invalid: getCount("Invalid / Other"),
+
+        failed: getCount("Failed"),
+
       };
+
     }
 
     // Up to 500 numbers: actual Plivo report.
+
     return {
+
       answered: Number(detailData.success || 0),
+
       busy: Number(detailData.busy || 0),
+
       noAnswer: Number(detailData.no_answer || 0),
-      invalid: Number(detailData.invalid || 0),
+
+      failed: Number(detailData.invalid || detailData.failed || 0),
+
     };
+
   };
 
   return (
@@ -679,7 +830,8 @@ const CampaignReports = () => {
 
               <tr className="bg-[#f5f6f9]">
 
-                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Invalid", "View"].map((h) => (
+                {["Date", "Name", "Status", "Caller ID", "Total", "Answered", "No Answer", "Busy", "Failed", "View"].map((h) => (
+
                   <th key={h} className="px-3 py-3 text-left border-b border-[#eee]">
 
                     <div className="flex items-center gap-1 text-[12px] font-[700] text-gray-700 whitespace-nowrap">
@@ -706,7 +858,7 @@ const CampaignReports = () => {
 
               ) : paginated.length === 0 ? (
 
-                <tr><td colSpan="11" className="text-center py-10 text-[13px] text-gray-500">No data available in table</td></tr>
+                <tr><td colSpan="10" className="text-center py-10 text-[13px] text-gray-500">No data available in table</td></tr>
 
               ) : paginated.map((item) => (
 
@@ -752,7 +904,7 @@ const CampaignReports = () => {
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.busy : item.busy}</td>
 
-                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.invalid : item.invalid}</td>
+                  <td className="px-3 py-3 border-b border-[#f1f1f1] text-[12.5px]">{item.estimated ? item.displayCounts.failed : item.failed}</td>
 
                   <td className="px-3 py-3 border-b border-[#f1f1f1]">
 
@@ -876,25 +1028,39 @@ const CampaignReports = () => {
 
                 <div className="flex items-center gap-3">
 
-
                   <button
-                    onClick={downloadExcel}
-                    disabled={
-                      String(detailData.status || "").toLowerCase() !== "done"
-                    }
-                    title={
-                      String(detailData.status || "").toLowerCase() !== "done"
-                        ? "Waiting"
-                        : "Download Excel"
-                    }
-                    className="flex items-center gap-2 bg-[#3d4b94] text-white px-5 h-[38px] rounded-md text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Download size={15} />
-                    {String(detailData.status || "").toLowerCase() === "done"
-                      ? "Download Excel"
-                      : "Waiting for completion"}
-                  </button>
 
+                    onClick={downloadExcel}
+
+                    disabled={
+
+                      String(detailData.status || "").toLowerCase() !== "done"
+
+                    }
+
+                    title={
+
+                      String(detailData.status || "").toLowerCase() !== "done"
+
+                        ? "Waiting"
+
+                        : "Download Excel"
+
+                    }
+
+                    className="flex items-center gap-2 bg-[#3d4b94] text-white px-5 h-[38px] rounded-md text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+
+                  >
+
+                    <Download size={15} />
+
+                    {String(detailData.status || "").toLowerCase() === "done"
+
+                      ? "Download Excel"
+
+                      : "Waiting for completion"}
+
+                  </button>
 
                   <button
 
@@ -912,315 +1078,576 @@ const CampaignReports = () => {
 
               </div>
 
-
               <div className="p-5">
+
                 {/* ANALYTICS */}
+
                 <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
+
                   <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+
                     <div>
+
                       <h3 className="text-[14px] font-[600] text-black">
+
                         Campaign Analytics
+
                       </h3>
+
                     </div>
 
                     <div className="border border-[#dcdfe6] bg-[#f7f8fa] text-[#3d4b94] px-4 py-1.5 rounded-md text-[12.5px] font-[600]">
+
                       Total Calls : {detailData.total}
+
                     </div>
+
                   </div>
 
                   <div className="grid lg:grid-cols-2 gap-6 items-center">
+
                     {/* DONUT CHART */}
+
                     <div className="relative h-[280px]">
+
                       <ResponsiveContainer width="100%" height="100%">
+
                         <PieChart>
+
                           <Pie
+
                             data={[
+
                               { name: "Answered", value: counts.answered },
+
                               { name: "No Answer", value: counts.noAnswer },
+
                               { name: "Busy", value: counts.busy },
-                              { name: "Invalid", value: counts.invalid },
+
+                              { name: "Failed", value: counts.failed },
+
                             ].filter((d) => d.value > 0).length > 0
+
                               ? [
+
                                 { name: "Answered", value: counts.answered },
+
                                 { name: "No Answer", value: counts.noAnswer },
+
                                 { name: "Busy", value: counts.busy },
-                                { name: "Invalid", value: counts.invalid },
+
+                                { name: "Failed", value: counts.failed },
+
                               ]
+
                               : [{ name: "No Data", value: 1 }]}
+
                             dataKey="value"
+
                             innerRadius={75}
+
                             outerRadius={110}
+
                             paddingAngle={6}
+
                             animationDuration={2000}
+
                           >
+
                             {[
+
                               "#4baaf5",
+
                               "#fccc55",
+
                               "#ff8a00",
+
                               "#f02424",
+
                               "#e0e0e0",
+
                             ].map((color, index) => (
+
                               <Cell
+
                                 key={index}
+
                                 fill={color}
+
                                 stroke="#fff"
+
                                 strokeWidth={5}
+
                               />
+
                             ))}
+
                           </Pie>
+
                           <Tooltip />
+
                         </PieChart>
+
                       </ResponsiveContainer>
 
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
+
                         <h2 className="text-[32px] font-[800] text-gray-900">
+
                           {detailData.total}
+
                         </h2>
+
                         <p className="text-[12.5px] text-gray-500 font-medium">
+
                           Total Calls
+
                         </p>
+
                       </div>
+
                     </div>
 
                     {/* STATS CARDS */}
+
                     <div className="space-y-3">
+
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+
                         <div className="flex justify-between items-center">
+
                           <div>
+
                             <p className="text-[#4baaf5] text-[12.5px] font-[600]">
+
                               Answered Calls
+
                             </p>
+
                             <h3 className="text-[22px] font-[800] text-[#4baaf5] mt-1">
+
                               {counts.answered}
+
                             </h3>
+
                           </div>
+
                           <div className="w-3 h-3 rounded-full bg-[#4baaf5]" />
+
                         </div>
+
                       </div>
 
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+
                         <div className="flex justify-between items-center">
+
                           <div>
+
                             <p className="text-[#e6b843] text-[12.5px] font-[600]">
+
                               No Answer
+
                             </p>
+
                             <h3 className="text-[22px] font-[800] text-[#e6b843] mt-1">
+
                               {counts.noAnswer}
+
                             </h3>
+
                           </div>
+
                           <div className="w-3 h-3 rounded-full bg-[#fccc55]" />
+
                         </div>
+
                       </div>
 
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+
                         <div className="flex justify-between items-center">
+
                           <div>
+
                             <p className="text-[#ff8a00] text-[12.5px] font-[600]">
+
                               Busy Calls
+
                             </p>
+
                             <h3 className="text-[22px] font-[800] text-[#ff8a00] mt-1">
+
                               {counts.busy}
+
                             </h3>
+
                           </div>
+
                           <div className="w-3 h-3 rounded-full bg-[#ff8a00]" />
+
                         </div>
+
                       </div>
 
                       {/* <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+
                         <div className="flex justify-between items-center">
+
                           <div>
+
                             <p className="text-[#e85d75] text-[12.5px] font-[600]">
+
                               Failed Calls
+
                             </p>
+
                             <h3 className="text-[22px] font-[800] text-[#e85d75] mt-1">
+
                               {counts.failed}
+
                             </h3>
+
                           </div>
+
                           <div className="w-3 h-3 rounded-full bg-[#e85d75]" />
+
                         </div>
+
                       </div> */}
 
                       <div className="bg-white border border-[#e2e5ec] rounded-md p-4">
+
                         <div className="flex justify-between items-center">
+
                           <div>
+
                             <p className="text-red-600 text-[12.5px] font-[600]">
-                              Invalid Calls
+
+                              Failed Calls
+
                             </p>
+
                             <h3 className="text-[22px] font-[800] text-red-700 mt-1">
-                              {counts.invalid}
+
+                              {counts.failed}
+
                             </h3>
+
                           </div>
+
                           <div className="w-3 h-3 rounded-full bg-red-500" />
+
                         </div>
+
                       </div>
+
                     </div>
+
                   </div>
+
                 </div>
 
                 {/* ESTIMATED REPORT: only when campaign is done and total > 100 */}
+
                 {String(detailData.status || "").toLowerCase() === "done" &&
+
                   Number(detailData.total || 0) > 500 && (
+
                     <div className="bg-white border border-[#e2e5ec] rounded-lg shadow-sm p-5 mb-4">
+
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+
                         <h3 className="text-[15px] font-bold text-gray-900">
+
                           Report
+
                         </h3>
 
                         <span className="text-xs font-semibold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+
                           Percentage
+
                         </span>
+
                       </div>
 
                       <div className="space-y-4">
+
                         {getEstimatedReport(
+
                           detailData.total,
+
                           detailData.id || detailData.job_id || detailData.name,
+
                           detailData.estimated_report
+
                         ).map((item) => (
+
                           <div key={item.name}>
+
                             <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+
                               <span className="text-sm font-semibold text-gray-700">
+
                                 {item.name}
+
                               </span>
 
                               <span
+
                                 className="text-sm font-bold"
+
                                 style={{ color: item.color }}
+
                               >
+
                                 {item.percent}%
+
                               </span>
+
                             </div>
 
                             <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+
                               <div
+
                                 className="h-full rounded-full"
+
                                 style={{
+
                                   width: `${item.percent}%`,
+
                                   backgroundColor: item.color,
+
                                 }}
+
                               />
+
                             </div>
 
                             <div className="mt-2 text-xs text-gray-500">
+
                               Calls: {item.estimatedCount.toLocaleString()}
+
                             </div>
+
                           </div>
+
                         ))}
+
                       </div>
+
                     </div>
+
                   )}
 
                 {/* DETAIL CARDS GRID */}
+
                 <div className="grid md:grid-cols-2 gap-3 mb-4">
+
                   {[
+
                     ["Campaign Status", detailData.status],
+
                     ["Total", detailData.total],
+
                     ["Answered", counts.answered],
+
                     ["No Answer", counts.noAnswer],
+
                     ["Busy", counts.busy],
-                    ["Invalid", counts.invalid],
+
+                    ["Failed", counts.failed],
+
                     ["Caller ID", detailData.caller_id || "-"],
+
                     ["Job ID", detailData.job_id || "-"],
+
                     [
+
                       "Voice File ID",
+
                       detailData.voice_file_id || detailData.media_file_id || "-",
+
                     ],
+
                   ].map(([label, val], i) => (
+
                     <div
+
                       key={i}
+
                       className="bg-white border border-[#e2e5ec] rounded-md p-4"
+
                     >
+
                       <p className="text-[11px] text-gray-500 uppercase tracking-wide">
+
                         {label}
+
                       </p>
+
                       <p className="text-[14px] font-[700] text-gray-800 mt-1 break-all">
+
                         {val}
+
                       </p>
+
                     </div>
+
                   ))}
+
                 </div>
 
                 {/* RESULTS TABLE */}
+
                 {detailData.results && detailData.results.length > 0 && (
+
                   <div className="overflow-x-auto rounded-md border border-[#e2e5ec]">
+
                     <table className="w-full min-w-[500px]">
+
                       <thead>
+
                         <tr className="bg-[#f5f6f9]">
+
                           <th className="px-4 py-3 text-left text-[12px] font-[700] text-gray-700 border-b border-[#eee]">
+
                             Number
+
                           </th>
+
                           <th className="px-4 py-3 text-left text-[12px] font-[700] text-gray-700 border-b border-[#eee]">
+
                             Status
+
                           </th>
+
                         </tr>
+
                       </thead>
 
                       <tbody>
+
                         {detailData.results.map((r, i) => {
+
                           const isEstimated = Number(detailData.total || 0) > 500;
 
                           const rawStatus = isEstimated
+
                             ? r.estimated_status
+
                             : r.final_status || r.status || "";
 
                           const normalized = String(rawStatus || "")
+
                             .trim()
+
                             .toLowerCase();
 
                           const bucket = classifyStatus(rawStatus);
 
                           const badge =
+
                             bucket === "answered"
+
                               ? "bg-green-100 text-green-700"
+
                               : bucket === "busy"
+
                                 ? "bg-orange-100 text-orange-700"
+
                                 : bucket === "no_answer"
+
                                   ? "bg-yellow-100 text-yellow-700"
+
                                     : bucket === "invalid"
+
                                       ? "bg-amber-100 text-amber-700"
+
                                       : "bg-blue-100 text-blue-700";
 
                           const statusLabels = {
+
                             answered: "Answered",
+
                             completed: "Answered",
+
                             answer: "Answered",
+
                             normal_clearing: "Answered",
+
                             no_answer: "No Answer",
+
                             "no-answer": "No Answer",
+
                             noanswer: "No Answer",
+
                             "no answer": "No Answer",
+
                             busy: "Busy",
+
                             user_busy: "Busy",
-                            invalid: "Invalid",
-                            invalid_number: "Invalid",
-                            "invalid-number": "Invalid",
-                            failed: "Other",
+
+                            invalid: "Failed",
+
+                            invalid_number: "Failed",
+
+                            "invalid-number": "Failed",
+
+                            failed: "Failed",
+
                             pending: "Pending",
+
                             not_called: "Pending",
+
                           };
 
                           return (
+
                             <tr
+
                               key={r.id || i}
+
                               className="border-b border-[#f1f1f1] hover:bg-[#fafbfc] duration-150"
+
                             >
+
                               <td className="px-4 py-3 text-[12.5px] font-[500]">
+
                                 {r.number}
+
                               </td>
+
                               <td className="px-4 py-3">
+
                                 <span
+
                                   className={`px-3 py-1 rounded-full text-[11px] font-bold ${badge}`}
+
                                 >
+
                                   {statusLabels[normalized] || rawStatus || "Pending"}
+
                                 </span>
+
                               </td>
+
                             </tr>
+
                           );
+
                         })}
+
                       </tbody>
+
                     </table>
+
                   </div>
+
                 )}
+
               </div>
 
             </div>

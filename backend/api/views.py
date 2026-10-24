@@ -1931,7 +1931,7 @@ def finalize_large_campaign(campaign_id):
 
         campaign = VoiceCampaign.objects.get(id=campaign_id)
 
-        if campaign.total > 500 and campaign.status in (
+        if int(campaign.total or 0) > 500 and str(campaign.status or "").strip().lower() in (
 
             "pending", "running"
 
@@ -1970,25 +1970,27 @@ def finalize_large_campaign(campaign_id):
         )
 
 def finalize_large_campaign_if_due(campaign):
+    """Persistently finalize a >500-number campaign after its processing window.
 
-    if campaign.total <= 500:
-
+    The timer started during campaign creation is only a best-effort shortcut:
+    Render can restart/sleep, so GET endpoints also call this recovery helper.
+    """
+    if int(campaign.total or 0) <= 500:
         return
 
-    if campaign.status not in ("pending", "running"):
+    if str(campaign.status or "").strip().lower() not in ("pending", "running"):
+        return
 
+    if not campaign.created_at:
         return
 
     processing_seconds = random.Random(campaign.id).randint(1200, 1500)
-
     deadline = campaign.created_at + timedelta(seconds=processing_seconds)
-
     if timezone.now() >= deadline:
-
+        # This helper fetches and saves the current DB record, so the update
+        # survives process restarts and is visible to the next API response.
         finalize_large_campaign(campaign.id)
-
-        campaign.status = "done"
-
+        campaign.refresh_from_db(fields=["status"])
 
 
 def finalize_stuck_small_campaign_if_due(campaign):
@@ -2550,6 +2552,9 @@ def schedule_campaign(request):
 
             ]
 
+        if not isinstance(raw_numbers, list):
+            return Response({"status": "failed", "message": "Numbers must be a list or comma-separated string."}, status=400)
+
         media_file_id = str(
 
             request.data.get("media_file_id", "")
@@ -2863,68 +2868,103 @@ def compute_counts_from_campaign(campaign):
 
 
 def get_safe_campaign_results(campaign):
-    results = [
-        dict(item)
-        for item in (campaign.results or [])
-    ]
+    """Return safe results and repair stable estimated results for large campaigns.
 
-    if str(campaign.status).lower() != "done":
+    Before a campaign is done, do not expose partial/estimated statuses.
+    For >500 numbers, the summary estimate intentionally covers campaign.total
+    (all valid unique numbers), as requested. The first 500 were submitted to
+    Plivo; the rest were not called. Estimated statuses are never Plivo facts.
+    """
+    original_results = campaign.results or []
+    results = [dict(item) for item in original_results if isinstance(item, dict)]
+    changed = results != original_results
+
+    is_done = str(campaign.status or "").strip().lower() == "done"
+    if not is_done:
         safe_results = []
-
         for item in results:
             item["status"] = "pending"
             item["final_status"] = "pending"
             item.pop("estimated_status", None)
             item.pop("estimated_report", None)
             safe_results.append(item)
-
         return safe_results
 
-    # Repair estimated statuses for completed large campaigns.
-    if campaign.total > 500:
-        report = get_estimated_report(campaign)
+    if int(campaign.total or 0) <= 500:
+        return results
 
-        if not report:
-            report = build_estimated_report(
-                campaign.id,
-                campaign.total,
-            )
+    report = get_estimated_report(campaign)
+    valid_items = [
+        item for item in results
+        if item.get("real_call") is True
+        or item.get("status") == "not_called"
+        or item.get("final_status") == "not_called"
+    ]
 
+    expected_total = int(campaign.total or 0)
+    # Repair old records if the saved estimate is absent or has inconsistent totals.
+    try:
+        report_total = int((report or {}).get("total_numbers", -1))
+        report_counts = (report or {}).get("counts", {})
+        counts_total = sum(int(report_counts.get(k, 0) or 0) for k in
+                           ("answered", "no_answer", "busy", "invalid"))
+    except (TypeError, ValueError, AttributeError):
+        report_total, counts_total = -1, -1
+
+    if not report or report_total != expected_total or counts_total != expected_total:
+        report = build_estimated_report(campaign.id, expected_total)
+        changed = True
+
+    # Always attach the report to the first result so older campaigns can be
+    # read by get_estimated_report() on future requests.
+    if results:
+        if results[0].get("estimated_report") != report:
+            results[0]["estimated_report"] = report
+            changed = True
+
+    # Make sure per-number estimated labels match the campaign-wide estimate.
+    counts = report.get("counts", {})
+    estimated_statuses = (
+        ["answered"] * int(counts.get("answered", 0) or 0)
+        + ["no_answer"] * int(counts.get("no_answer", 0) or 0)
+        + ["busy"] * int(counts.get("busy", 0) or 0)
+        + ["invalid"] * int(counts.get("invalid", 0) or 0)
+    )
+    random.Random(str(campaign.id)).shuffle(estimated_statuses)
+
+    # If a historical record has a different result count, regenerate estimates
+    # for the actual valid result records rather than silently leaving Pending.
+    if valid_items and len(estimated_statuses) != len(valid_items):
+        report = build_estimated_report(campaign.id, len(valid_items))
         counts = report.get("counts", {})
-
         estimated_statuses = (
-            ["answered"] * counts.get("answered", 0)
-            + ["no_answer"] * counts.get("no_answer", 0)
-            + ["busy"] * counts.get("busy", 0)
-            + ["invalid"] * counts.get("invalid", 0)
+            ["answered"] * int(counts.get("answered", 0) or 0)
+            + ["no_answer"] * int(counts.get("no_answer", 0) or 0)
+            + ["busy"] * int(counts.get("busy", 0) or 0)
+            + ["invalid"] * int(counts.get("invalid", 0) or 0)
         )
+        random.Random(str(campaign.id)).shuffle(estimated_statuses)
+        if results:
+            results[0]["estimated_report"] = report
+        changed = True
 
-        random.Random(str(campaign.id)).shuffle(
-            estimated_statuses
-        )
+    if len(estimated_statuses) == len(valid_items):
+        for item, estimate in zip(valid_items, estimated_statuses):
+            if item.get("estimated_status") != estimate:
+                item["estimated_status"] = estimate
+                changed = True
 
-        valid_items = [
-            item for item in results
-            if (
-                item.get("real_call") is True
-                or item.get("status") == "not_called"
-            )
-        ]
-
-        # Never assign missing estimates as Pending silently.
-        if len(estimated_statuses) == len(valid_items):
-            for item, estimated_status in zip(
-                valid_items, estimated_statuses
-            ):
-                item["estimated_status"] = estimated_status
-
-        # Preserve invalid-input records as invalid.
-        for item in results:
-            if (
-                item.get("status") == "invalid"
-                or item.get("final_status") == "invalid"
-            ):
+    # Invalid raw inputs are not included in campaign.total estimates.
+    for item in results:
+        if (item.get("status") == "invalid"
+                or item.get("final_status") == "invalid"):
+            if item.get("estimated_status") != "invalid":
                 item["estimated_status"] = "invalid"
+                changed = True
+
+    if changed:
+        campaign.results = results
+        campaign.save(update_fields=["results"])
 
     return results
 
