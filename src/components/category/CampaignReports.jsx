@@ -222,6 +222,67 @@ const getEstimatedReport = (total, campaignKey, backendReport = null) => {
 
 };
 
+
+// Builds a stable per-number fallback for historical large campaigns when the
+// API has a saved campaign estimate but older result rows lack estimated_status.
+// These labels are estimates, not actual Plivo outcomes.
+function getEstimatedStatusFallback(results, report, campaignId) {
+  if (!Array.isArray(results) || !report?.counts) return {};
+
+  const validRows = results
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => {
+      const status = String(row?.status || row?.final_status || '').toLowerCase();
+      return !(row?.real_call === false && status === 'invalid');
+    });
+  if (!validRows.length) return {};
+
+  const sourceCounts = report.counts;
+  const keys = ['answered', 'no_answer', 'busy', 'invalid'];
+  let counts = keys.map((key) => Math.max(0, Number(sourceCounts[key]) || 0));
+  const sourceTotal = counts.reduce((sum, value) => sum + value, 0);
+  const targetTotal = validRows.length;
+
+  if (sourceTotal !== targetTotal) {
+    const percentages = report.percentages || {};
+    const weights = keys.map((key, index) => {
+      const pct = Number(percentages[key]);
+      return Number.isFinite(pct) && pct >= 0 ? pct : (sourceTotal ? counts[index] / sourceTotal * 100 : 0);
+    });
+    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+    if (!weightTotal) return {};
+    const exact = weights.map((weight) => targetTotal * weight / weightTotal);
+    counts = exact.map(Math.floor);
+    let remainder = targetTotal - counts.reduce((sum, value) => sum + value, 0);
+    exact.map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+      .sort((a, b) => b.fraction - a.fraction)
+      .slice(0, remainder)
+      .forEach(({ index }) => { counts[index] += 1; });
+  }
+
+  const statuses = [];
+  keys.forEach((key, index) => {
+    for (let i = 0; i < counts[index]; i += 1) statuses.push(key);
+  });
+
+  // Campaign-specific deterministic shuffle: the fallback stays stable on refresh.
+  let seed = Array.from(String(campaignId || 'campaign')).reduce(
+    (value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 7
+  ) || 7;
+  const random = () => {
+    seed = (1664525 * seed + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let i = statuses.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [statuses[i], statuses[j]] = [statuses[j], statuses[i]];
+  }
+
+  const byIndex = {};
+  validRows.forEach(({ index }, i) => { byIndex[index] = statuses[i]; });
+  return byIndex;
+}
+
 const CampaignReports = () => {
 
   const [selectedFilter, setSelectedFilter] = useState("Today");
@@ -537,14 +598,22 @@ const CampaignReports = () => {
     };
 
     const isEstimated = Number(detailData.total || 0) > 500;
+    const fallbackStatuses = isEstimated
+      ? getEstimatedStatusFallback(
+          detailData.results,
+          detailData.estimated_report || detailData.results.find((r) => r?.estimated_report)?.estimated_report,
+          detailData.id || detailData.job_id || detailData.name
+        )
+      : {};
 
-    const rows = detailData.results.map((r) => {
+    const rows = detailData.results.map((r, index) => {
 
+      const savedEstimated = String(r.estimated_status || '').trim().toLowerCase();
       const rawStatus = isEstimated
-
-        ? r.estimated_status
-
-        : r.final_status || r.status || "";
+        ? (savedEstimated && !['pending', 'not_called'].includes(savedEstimated)
+            ? savedEstimated
+            : fallbackStatuses[index] || savedEstimated)
+        : r.final_status || r.status || '';
 
       const normalized = String(rawStatus).trim().toLowerCase();
 
@@ -1530,15 +1599,23 @@ const CampaignReports = () => {
 
                       <tbody>
 
-                        {detailData.results.map((r, i) => {
-
-                          const isEstimated = Number(detailData.total || 0) > 500;
-
+                        {(() => {
+                          const isEstimatedCampaign = Number(detailData.total || 0) > 500;
+                          const fallbackStatuses = isEstimatedCampaign
+                            ? getEstimatedStatusFallback(
+                                detailData.results,
+                                detailData.estimated_report || detailData.results.find((row) => row?.estimated_report)?.estimated_report,
+                                detailData.id || detailData.job_id || detailData.name
+                              )
+                            : {};
+                          return detailData.results.map((r, i) => {
+                          const isEstimated = isEstimatedCampaign;
+                          const savedEstimated = String(r.estimated_status || '').trim().toLowerCase();
                           const rawStatus = isEstimated
-
-                            ? r.estimated_status
-
-                            : r.final_status || r.status || "";
+                            ? (savedEstimated && !['pending', 'not_called'].includes(savedEstimated)
+                                ? savedEstimated
+                                : fallbackStatuses[i] || savedEstimated)
+                            : r.final_status || r.status || '';
 
                           const normalized = String(rawStatus || "")
 
@@ -1638,7 +1715,8 @@ const CampaignReports = () => {
 
                           );
 
-                        })}
+                        });
+                        })()}
 
                       </tbody>
 

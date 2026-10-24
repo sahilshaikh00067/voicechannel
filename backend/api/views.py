@@ -2896,9 +2896,15 @@ def get_safe_campaign_results(campaign):
     report = get_estimated_report(campaign)
     valid_items = [
         item for item in results
-        if item.get("real_call") is True
-        or item.get("status") == "not_called"
-        or item.get("final_status") == "not_called"
+        if (
+            item.get("status") == "not_called"
+            or item.get("final_status") == "not_called"
+            or (
+                item.get("real_call") is not False
+                and item.get("status") != "invalid"
+                and item.get("final_status") != "invalid"
+            )
+        )
     ]
 
     expected_total = int(campaign.total or 0)
