@@ -97,6 +97,10 @@ if DATABASE_URL:
             conn_health_checks=True,
         )
     }
+    print(
+    "DATABASE HOST:",
+    os.getenv("DATABASE_URL", "").split("@")[-1].split(":")[0]
+)
 else:
     # Local development
     DATABASES = {
