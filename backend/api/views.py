@@ -1433,8 +1433,7 @@ def upload_media(request):
             name=name,
             voice_file_id=media_url,
             media_url=media_url,
-            caller_id=caller_id,
-            status="Active"
+            caller_id=caller_id
         )
 
         return Response({
